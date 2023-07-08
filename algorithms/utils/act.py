@@ -1,4 +1,4 @@
-from .distributions import Bernoulli, Categorical, DiagGaussian
+from .distributions import Bernoulli, Categorical, DiagGaussian, MultiActionDiagGaussian
 import torch
 import torch.nn as nn
 

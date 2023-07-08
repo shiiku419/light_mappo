@@ -90,6 +90,31 @@ class DiagGaussian(nn.Module):
         action_logstd = self.logstd(zeros)
         return FixedNormal(action_mean, action_logstd.exp())
 
+class MultiActionDiagGaussian(nn.Module):
+    def __init__(self, num_inputs, num_outputs, hidden_size=64, num_actions=3, use_orthogonal=True, gain=0.01):
+        super(MultiActionDiagGaussian, self).__init__()
+
+        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][use_orthogonal]
+        def init_(m): 
+            return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain)
+
+        self.fc_shared = init_(nn.Linear(num_inputs, hidden_size))
+
+        self.fc_means = nn.ModuleList([
+            init_(nn.Linear(hidden_size, num_outputs))
+            for _ in range(num_actions)
+        ])
+        self.logstds = nn.ParameterList([
+            AddBias(torch.zeros(num_outputs))
+            for _ in range(num_actions)
+        ])
+
+    def forward(self, x):
+        x = torch.F.relu(self.fc_shared(x))
+        actions_mean = [fc_mean(x) for fc_mean in self.fc_means]
+        actions_logstd = [logstd(torch.zeros_like(action_mean)) for logstd, action_mean in zip(self.logstds, actions_mean)]
+        return [FixedNormal(action_mean, action_logstd.exp()) for action_mean, action_logstd in zip(actions_mean, actions_logstd)]
+
 
 class Bernoulli(nn.Module):
     def __init__(self, num_inputs, num_outputs, use_orthogonal=True, gain=0.01):
