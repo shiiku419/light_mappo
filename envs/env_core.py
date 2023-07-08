@@ -59,8 +59,6 @@ class EnvCore(object):
         self.time += 1
 
         action = {}
-        print(actions,'actions')
-        print(len(actions))
         rewards = []
         observations = {}
         post_psis = {}
