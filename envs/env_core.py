@@ -4,6 +4,7 @@ import random
 import math
 from scipy.special import softmax
 from envs.ga import genetic_algorithm
+from torch.utils.tensorboard import SummaryWriter
 
 class EnvCore(object):
     
@@ -12,6 +13,7 @@ class EnvCore(object):
         self.obs_dim = 5
         self.action_dim = 5
         self.dataset = np.random.rand(5, 5)
+        self.writer = SummaryWriter(log_dir='runs/experiment_name')
         self.n_member = n_member
         self.n_action = 5
         self.action_space = gym.spaces.Dict(
@@ -52,11 +54,14 @@ class EnvCore(object):
         self.ranking = self.first_ranking.copy()
 
         self.pre_threshold = 0
+        self.step_count = 0
+        self.reward_count = 0
 
         self.params = {}
 
     def step(self, actions):
         self.time += 1
+        self.step_count += 1
 
         action = {}
         rewards = []
@@ -70,13 +75,26 @@ class EnvCore(object):
                 action, subaction, agent_id, self.dataset, self.ranking
             )
             observation = self.get_observation(self.ranking)
-            reward, post_psi = self.get_reward(penalty, agent_id)
+            reward, post_psi, params = self.get_reward(penalty, agent_id)
+            self.reward_count += reward
             rewards.append(reward)
             post_psis = post_psi
             self.generate(subaction)
-        done = self.check_is_done(post_psis)
-        info = post_psis
+            info = {
+                'post_psis': post_psis,
+                'time': self.time,
+                'reward': self.reward_count,
+                'dataset': self.dataset,
+                'post_gsi': params['post_gsi']
+            }
+            for i, post_psi in enumerate(info['post_psis']):
+                self.writer.add_scalar('post_psis/agent_{}_{}'.format(agent_id, i), post_psi, self.step_count)
+            self.writer.add_scalar('time/agent_{}'.format(agent_id), info['time'], self.step_count)
+            self.writer.add_scalar('reward/agent_{}'.format(agent_id), info['reward'], self.step_count)
+            self.writer.add_scalar('post_gsi/agent_{}'.format(agent_id), info['post_gsi'], self.step_count)
 
+        done = self.check_is_done(post_psis)
+        
         return observation, rewards, done, info
 
     def generate(self, subaction):
@@ -140,7 +158,7 @@ class EnvCore(object):
         # もしくは、満足度の絶対値を報酬として使用する場合
         reward = abs(clip)
 
-        return reward, post_psi
+        return reward, post_psi, params
 
     def get_observation(self, p):
         group_rank = self.calc_group_rank(p)
