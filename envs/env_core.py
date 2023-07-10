@@ -75,8 +75,8 @@ class EnvCore(object):
         for agent_id in self.agent:
             default_action = actions[agent_id]
             split_actions = np.array_split(default_action, 3)
-            action = split_actions[0]
-            subaction = split_actions[1]
+            action = split_actions[0].flatten()
+            subaction = split_actions[1].flatten()
             aaaaaa = split_actions[2]
             self.ranking, penalty = self.change_ranking(
                 action, subaction, agent_id, self.dataset, self.ranking

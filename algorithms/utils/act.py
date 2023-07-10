@@ -179,7 +179,7 @@ class ACTLayer(nn.Module):
             action_log_probs = [dist.log_probs(action) for dist, action in zip(action_logit, actions)]
             action_log_probs = torch.sum(torch.cat(action_log_probs, dim=-1), dim=-1, keepdim=True)
             if active_masks is not None:
-                if len(action_logit.entropy().shape) == len(active_masks.shape):
+                if len(action_logit[0].entropy().shape) == len(active_masks.shape):
                     #dist_entropy.append((action_logit.entropy() * active_masks).sum() / active_masks.sum())
                     dist_entropy = [(dist.entropy() * active_masks).sum() / active_masks.sum() for dist in action_logit]
                     dist_entropy = sum(dist_entropy) / len(dist_entropy)
@@ -188,9 +188,10 @@ class ACTLayer(nn.Module):
                     #dist_entropy.append((action_logit.entropy() * active_masks.squeeze(-1)).sum() / active_masks.sum())
             else:
                 dist_entropy.append(action_logit.entropy().mean())
+            #action_log_probs = torch.sum(torch.cat(action_log_probs, -1), -1, keepdim=True)
+            #dist_entropy = dist_entropy[0] # / 2.0 + dist_entropy[1] / 0.98  # ! dosen't make sense
+            dist_entropy = dist_entropy.item()
 
-            action_log_probs = torch.sum(torch.cat(action_log_probs, -1), -1, keepdim=True)
-            dist_entropy = dist_entropy[0] # / 2.0 + dist_entropy[1] / 0.98  # ! dosen't make sense
 
         else:
             action_logits = self.action_out(x, available_actions)
