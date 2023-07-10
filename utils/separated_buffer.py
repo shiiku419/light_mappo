@@ -49,7 +49,7 @@ class SeparatedReplayBuffer(object):
         act_shape = get_shape_from_act_space(act_space)
 
         self.actions = np.zeros((self.episode_length, self.n_rollout_threads, act_shape), dtype=np.float32)
-        self.action_log_probs = np.zeros((self.episode_length, self.n_rollout_threads, act_shape), dtype=np.float32)
+        self.action_log_probs = np.zeros((self.episode_length, self.n_rollout_threads, 3), dtype=np.float32)
         self.rewards = np.zeros((self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
         
         self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, 1), dtype=np.float32)

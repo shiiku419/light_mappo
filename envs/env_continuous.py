@@ -72,7 +72,6 @@ class ContinuousActionEnv(object):
         # actions shape = (5, 2, 5)
         # 5 threads of environment, there are 2 agents inside, and each agent's action is a 5-dimensional one_hot encoding
         """
-
         results = self.env.step(actions)
         obs, rews, dones, infos = results
         dones = [dones for _ in range(5)]

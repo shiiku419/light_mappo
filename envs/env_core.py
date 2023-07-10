@@ -5,6 +5,7 @@ import math
 from scipy.special import softmax
 from envs.ga import genetic_algorithm
 from torch.utils.tensorboard import SummaryWriter
+import torch
 
 class EnvCore(object):
     
@@ -38,6 +39,8 @@ class EnvCore(object):
 
         self.observation_space = gym.spaces.Dict({i: gym.spaces.Box(low=0, high=10, shape=(5,), dtype=float) for i in range(self.n_member)})
         self.time = 0
+        self.log = []
+        self.episode = 0
         self.max_step = 100
         self.agent = random.sample(range(self.n_member), self.n_member)
 
@@ -62,6 +65,7 @@ class EnvCore(object):
     def step(self, actions):
         self.time += 1
         self.step_count += 1
+        self.generator = random.sample(range(self.n_member), self.n_member)
 
         action = {}
         rewards = []
@@ -69,8 +73,11 @@ class EnvCore(object):
         post_psis = {}
         done = False
         for agent_id in self.agent:
-            action = actions[agent_id]
-            subaction = actions[agent_id]
+            default_action = actions[agent_id]
+            split_actions = np.array_split(default_action, 3)
+            action = split_actions[0]
+            subaction = split_actions[1]
+            aaaaaa = split_actions[2]
             self.ranking, penalty = self.change_ranking(
                 action, subaction, agent_id, self.dataset, self.ranking
             )
@@ -79,7 +86,6 @@ class EnvCore(object):
             self.reward_count += reward
             rewards.append(reward)
             post_psis = post_psi
-            self.generate(subaction)
             info = {
                 'post_psis': post_psis,
                 'time': self.time,
@@ -87,14 +93,31 @@ class EnvCore(object):
                 'dataset': self.dataset,
                 'post_gsi': params['post_gsi']
             }
-            for i, post_psi in enumerate(info['post_psis']):
-                self.writer.add_scalar('post_psis/agent_{}_{}'.format(agent_id, i), post_psi, self.step_count)
-            self.writer.add_scalar('time/agent_{}'.format(agent_id), info['time'], self.step_count)
-            self.writer.add_scalar('reward/agent_{}'.format(agent_id), info['reward'], self.step_count)
-            self.writer.add_scalar('post_gsi/agent_{}'.format(agent_id), info['post_gsi'], self.step_count)
-
+                    
         done = self.check_is_done(post_psis)
-        
+
+        if self.time% 35 == 0 and self.generator[0] == 0:
+            self.generate(subaction)
+
+        if self.time == 1:
+            self.log = []
+            self.log.append(self.dataset)
+        if done:
+            self.episode += 1
+            self.log.append(self.dataset)
+            self.log = torch.Tensor(self.log)
+            
+            for i, post_psi in enumerate(info['post_psis']):
+                self.writer.add_scalar('post_psis/agent_{}_{}'.format(i, i), post_psi, self.step_count)
+            for i in range(self.agent_num):
+                self.writer.add_scalar('time/agent_{}'.format(i), info['time'], self.step_count)
+                self.writer.add_scalar('reward/agent_{}'.format(i), info['reward'], self.step_count)
+                self.writer.add_scalar('post_gsi/agent_{}'.format(i), info['post_gsi'], self.step_count)
+            self.log_reshaped = self.log.view(-1, self.log.shape[-1])  # reshape into 2D
+            self.writer.add_embedding(self.log_reshaped,
+                        global_step=self.episode,
+                        tag='dataset',
+                        metadata=['row_{}'.format(i) for i in range(self.log_reshaped.shape[0])])  # create a label for each row
         return observation, rewards, done, info
 
     def generate(self, subaction):
@@ -143,20 +166,19 @@ class EnvCore(object):
         reward = 0
         clip = 0
 
-        main_reward = params["post_psi"] - params["pre_psi"]
-        sub_reward = params["post_gsi"] - params["pre_gsi"]
+        main_reward = params['post_psi'] - params['pre_psi']
+        sub_reward = params['post_gsi'] - params['pre_gsi']
 
-        clip = main_reward + (sub_reward / self.n_member)
-        max_reward = 1
-        min_reward = -1
+        clip += main_reward + (sub_reward / self.n_member)
 
-        # 報酬の正規化
-        clip = (clip - min_reward) / (max_reward - min_reward)
+        self.first_ranking = self.ranking
 
-        reward = clip  # 報酬として満足度の差分そのものを使用
-
-        # もしくは、満足度の絶対値を報酬として使用する場合
-        reward = abs(clip)
+        if clip > 0:
+            reward = 1
+        elif clip < 0:
+            reward = -1
+        else:
+            reward = 0
 
         return reward, post_psi, params
 

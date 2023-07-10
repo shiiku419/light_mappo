@@ -91,7 +91,7 @@ class DiagGaussian(nn.Module):
         return FixedNormal(action_mean, action_logstd.exp())
 
 class MultiActionDiagGaussian(nn.Module):
-    def __init__(self, num_inputs, num_outputs, hidden_size=64, num_actions=3, use_orthogonal=True, gain=0.01):
+    def __init__(self, num_inputs, num_outputs, use_orthogonal=True, gain=0.01, hidden_size=64, num_actions=3):
         super(MultiActionDiagGaussian, self).__init__()
 
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][use_orthogonal]
@@ -110,7 +110,7 @@ class MultiActionDiagGaussian(nn.Module):
         ])
 
     def forward(self, x):
-        x = torch.F.relu(self.fc_shared(x))
+        x = nn.ReLU()(self.fc_shared(x))
         actions_mean = [fc_mean(x) for fc_mean in self.fc_means]
         actions_logstd = [logstd(torch.zeros_like(action_mean)) for logstd, action_mean in zip(self.logstds, actions_mean)]
         return [FixedNormal(action_mean, action_logstd.exp()) for action_mean, action_logstd in zip(actions_mean, actions_logstd)]

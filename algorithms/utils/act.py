@@ -22,7 +22,8 @@ class ACTLayer(nn.Module):
         elif action_space.__class__.__name__ == "Box":
             self.continuous_action = True
             action_dim = action_space.shape[0]
-            self.action_out = DiagGaussian(inputs_dim, action_dim, use_orthogonal, gain)
+            #self.action_out = DiagGaussian(inputs_dim, action_dim, use_orthogonal, gain)
+            self.action_out = MultiActionDiagGaussian(inputs_dim, action_dim, use_orthogonal, gain)
         elif action_space.__class__.__name__ == "MultiBinary":
             action_dim = action_space.shape[0]
             self.action_out = Bernoulli(inputs_dim, action_dim, use_orthogonal, gain)
@@ -80,17 +81,20 @@ class ACTLayer(nn.Module):
             # actions = []
             # action_log_probs = []
             action_logit = self.action_out(x)
-            actions = action_logit.mode() if deterministic else action_logit.sample()
-            action_log_probs = action_logit.log_probs(actions)
+            #actions = action_logit.mode() if deterministic else action_logit.sample()
+            actions = [dist.mode() if deterministic else dist.sample() for dist in action_logit]
+            #action_log_probs = action_logit.log_probs(actions)
+            action_log_probs = [dist.log_probs(action) for dist, action in zip(action_logit, actions)]
             # actions.append(action.float())
             # action_log_probs.append(action_log_prob)
             # actions = torch.cat(actions, -1)
             # action_log_probs = torch.sum(torch.cat(action_log_probs, -1), -1, keepdim=True)
+            actions = torch.cat(actions, dim=-1).unsqueeze(-1)
+            action_log_probs = torch.cat(action_log_probs, dim=-1).unsqueeze(-1)
         else:
             action_logits = self.action_out(x, available_actions)
             actions = action_logits.mode() if deterministic else action_logits.sample() 
             action_log_probs = action_logits.log_probs(actions)
-        
         return actions, action_log_probs
 
     def get_probs(self, x, available_actions=None):
@@ -163,6 +167,7 @@ class ACTLayer(nn.Module):
             dist_entropy = torch.tensor(dist_entropy).mean()
 
         elif self.continuous_action:
+            deterministic=False
             # a, b = action.split((2, 1), -1)
             # b = b.long()
             # action = [a, b]
@@ -170,13 +175,17 @@ class ACTLayer(nn.Module):
             dist_entropy = []
             # for action_out, act in zip(self.action_outs, action):
             action_logit = self.action_out(x)
-            action_log_probs.append(action_logit.log_probs(action))
+            actions = [dist.mode() if deterministic else dist.sample() for dist in action_logit]
+            action_log_probs = [dist.log_probs(action) for dist, action in zip(action_logit, actions)]
+            action_log_probs = torch.sum(torch.cat(action_log_probs, dim=-1), dim=-1, keepdim=True)
             if active_masks is not None:
                 if len(action_logit.entropy().shape) == len(active_masks.shape):
-                    dist_entropy.append((action_logit.entropy() * active_masks).sum() / active_masks.sum())
+                    #dist_entropy.append((action_logit.entropy() * active_masks).sum() / active_masks.sum())
+                    dist_entropy = [(dist.entropy() * active_masks).sum() / active_masks.sum() for dist in action_logit]
+                    dist_entropy = sum(dist_entropy) / len(dist_entropy)
                 else:
-                    dist_entropy.append(
-                        (action_logit.entropy() * active_masks.squeeze(-1)).sum() / active_masks.sum())
+                    dist_entropy = sum([dist.entropy().mean() for dist in action_logit]) / len(action_logit)
+                    #dist_entropy.append((action_logit.entropy() * active_masks.squeeze(-1)).sum() / active_masks.sum())
             else:
                 dist_entropy.append(action_logit.entropy().mean())
 

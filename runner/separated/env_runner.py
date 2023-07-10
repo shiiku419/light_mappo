@@ -9,6 +9,8 @@ from runner.separated.base_runner import Runner
 
 
 def _t2n(x):
+    if isinstance(x, (list, tuple)):
+        x = torch.cat(x, dim=-1)
     return x.detach().cpu().numpy()
 
 
