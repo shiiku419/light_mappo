@@ -37,7 +37,7 @@ class EnvCore(object):
         )
 
 
-        self.observation_space = gym.spaces.Dict({i: gym.spaces.Box(low=0, high=10, shape=(5,), dtype=float) for i in range(self.n_member)})
+        self.observation_space = gym.spaces.Dict({i: gym.spaces.Box(low=-1, high=1, shape=(5,), dtype=float) for i in range(self.n_member)})
         self.time = 0
         self.log = []
         self.episode = 0
@@ -56,22 +56,20 @@ class EnvCore(object):
 
         self.ranking = self.first_ranking.copy()
 
+        self.reward_count = [0 for _ in range(self.n_member)]
         self.pre_threshold = 0
         self.step_count = 0
-        self.reward_count = 0
 
         self.params = {}
 
     def step(self, actions):
         self.time += 1
-        self.step_count += 1
         self.generator = random.sample(range(self.n_member), self.n_member)
 
         action = {}
         rewards = []
-        self.reward_count = [0 for _ in range(self.n_member)]
         observations = {}
-        post_psis = {i: 0 for i in range(self.n_member)}
+        post_psis = []
         done = False
         for agent_id in self.agent:
             default_action = actions[agent_id]
@@ -86,7 +84,7 @@ class EnvCore(object):
             reward, post_psi, params = self.get_reward(penalty, agent_id)
             self.reward_count[agent_id] += reward
             rewards.append(reward)
-            post_psis[agent_id] = post_psi
+            post_psis = post_psi
             info = {
                 'post_psis': post_psis,
                 'time': self.time,
@@ -99,6 +97,8 @@ class EnvCore(object):
 
         if self.time% 25 == 0 and self.generator[0] == 0:
             self.generate(subsubaction)
+        
+        self.step_count += 1
 
         if self.time == 1:
             self.log = []
@@ -108,8 +108,8 @@ class EnvCore(object):
             self.log.append(self.dataset)
             self.log = torch.Tensor(self.log)
             
-            for i, post_psi in enumerate(post_psis):
-                self.writer.add_scalar('post_psis/agent_{}'.format(i), post_psi, self.step_count)
+            for i in range(self.n_member):
+                self.writer.add_scalar('post_psis/agent_{}'.format(i), info['post_psis'][i], self.step_count)
                 self.writer.add_scalar('reward/agent_{}'.format(i), info['reward'][i], self.step_count)
             self.writer.add_scalar('log/time', info['time'], self.step_count)
             self.writer.add_scalar('log/post_gsi', info['post_gsi'], self.step_count)
@@ -191,7 +191,7 @@ class EnvCore(object):
         return observation
 
     def check_is_done(self, post_psi):
-        if all(0.8 <= flag for flag in post_psi) == True:
+        if all(0.8 <= flag for flag in post_psi):
             return True
         else:
             return self.time == self.max_step
