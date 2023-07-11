@@ -22,10 +22,10 @@ class EnvCore(object):
                 i: gym.spaces.Dict(
                     {
                         "p_thresholds": gym.spaces.Box(
-                            low=0, high=10, shape=(5,), dtype=float
+                            low=0, high=1, shape=(5,), dtype=float
                         ),
                         "n_thresholds": gym.spaces.Box(
-                            low=0, high=10, shape=(5,), dtype=float
+                            low=0, high=1, shape=(5,), dtype=float
                         ),
                         "matrix": gym.spaces.Box(
                             low=0, high=1, shape=(5,), dtype=float
@@ -69,23 +69,24 @@ class EnvCore(object):
 
         action = {}
         rewards = []
+        self.reward_count = [0 for _ in range(self.n_member)]
         observations = {}
-        post_psis = {}
+        post_psis = {i: 0 for i in range(self.n_member)}
         done = False
         for agent_id in self.agent:
             default_action = actions[agent_id]
             split_actions = np.array_split(default_action, 3)
             action = split_actions[0].flatten()
             subaction = split_actions[1].flatten()
-            aaaaaa = split_actions[2]
+            subsubaction = split_actions[2].flatten()
             self.ranking, penalty = self.change_ranking(
                 action, subaction, agent_id, self.dataset, self.ranking
             )
             observation = self.get_observation(self.ranking)
             reward, post_psi, params = self.get_reward(penalty, agent_id)
-            self.reward_count += reward
+            self.reward_count[agent_id] += reward
             rewards.append(reward)
-            post_psis = post_psi
+            post_psis[agent_id] = post_psi
             info = {
                 'post_psis': post_psis,
                 'time': self.time,
@@ -96,8 +97,8 @@ class EnvCore(object):
                     
         done = self.check_is_done(post_psis)
 
-        if self.time% 35 == 0 and self.generator[0] == 0:
-            self.generate(subaction)
+        if self.time% 25 == 0 and self.generator[0] == 0:
+            self.generate(subsubaction)
 
         if self.time == 1:
             self.log = []
@@ -107,12 +108,11 @@ class EnvCore(object):
             self.log.append(self.dataset)
             self.log = torch.Tensor(self.log)
             
-            for i, post_psi in enumerate(info['post_psis']):
-                self.writer.add_scalar('post_psis/agent_{}_{}'.format(i, i), post_psi, self.step_count)
-            for i in range(self.agent_num):
-                self.writer.add_scalar('time/agent_{}'.format(i), info['time'], self.step_count)
-                self.writer.add_scalar('reward/agent_{}'.format(i), info['reward'], self.step_count)
-                self.writer.add_scalar('post_gsi/agent_{}'.format(i), info['post_gsi'], self.step_count)
+            for i, post_psi in enumerate(post_psis):
+                self.writer.add_scalar('post_psis/agent_{}'.format(i), post_psi, self.step_count)
+                self.writer.add_scalar('reward/agent_{}'.format(i), info['reward'][i], self.step_count)
+            self.writer.add_scalar('log/time', info['time'], self.step_count)
+            self.writer.add_scalar('log/post_gsi', info['post_gsi'], self.step_count)
             self.log_reshaped = self.log.view(-1, self.log.shape[-1])  # reshape into 2D
             self.writer.add_embedding(self.log_reshaped,
                         global_step=self.episode,
@@ -166,19 +166,20 @@ class EnvCore(object):
         reward = 0
         clip = 0
 
-        main_reward = params['post_psi'] - params['pre_psi']
-        sub_reward = params['post_gsi'] - params['pre_gsi']
+        main_reward = params["post_psi"] - params["pre_psi"]
+        sub_reward = params["post_gsi"] - params["pre_gsi"]
 
-        clip += main_reward + (sub_reward / self.n_member)
+        clip = main_reward + (sub_reward / self.n_member)
+        max_reward = 1
+        min_reward = -1
 
-        self.first_ranking = self.ranking
+        # 報酬の正規化
+        clip = (clip - min_reward) / (max_reward - min_reward)
 
-        if clip > 0:
-            reward = 1
-        elif clip < 0:
-            reward = -1
-        else:
-            reward = 0
+        reward = clip  # 報酬として満足度の差分そのものを使用
+
+        # もしくは、満足度の絶対値を報酬として使用する場合
+        reward = abs(clip) - penalty
 
         return reward, post_psi, params
 
@@ -372,6 +373,7 @@ class EnvCore(object):
         group_satisfaction = 0
         satisfaction_index = [0 for _ in range(self.n_member)]
         g_ranks = self.calc_group_rank(p)
+        g_ranks = g_ranks[np.argsort(g_ranks[:, 1])]
         for k in range(0, len(p)):
             i = self.agent[k]
             i_ranks = p[i][np.argsort(p[1][:, 1])]
@@ -426,7 +428,9 @@ class EnvCore(object):
         return p
 
     def change_ranking(self, action, subaction, id, dataset, ranking):
-        self.P[id] = [x + y for (x, y) in zip(self.P[id], action.tolist())]
+        #self.P[id] = [x + y for (x, y) in zip(self.P[id], action.tolist())]
+        self.P[id] += action
+        self.Q[id] =+ subaction
         S = [(self.P[id][j] + self.Q[id][j]) / 2 for j in range(5)]
 
         penalty = sum(S) - self.pre_threshold
