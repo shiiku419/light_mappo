@@ -43,7 +43,7 @@ def get_shape_from_act_space(act_space):
     elif act_space.__class__.__name__ == "MultiDiscrete":
         act_shape = act_space.shape
     elif act_space.__class__.__name__ == "Box":
-        act_shape = 15 #act_space.shape[0]
+        act_shape = 21 #act_space.shape[0]
     elif act_space.__class__.__name__ == "MultiBinary":
         act_shape = act_space.shape[0]
     else:  # agar

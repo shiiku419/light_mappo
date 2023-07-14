@@ -6,29 +6,35 @@ from scipy.special import softmax
 from envs.ga import genetic_algorithm
 from torch.utils.tensorboard import SummaryWriter
 import torch
+import csv
+
+f = open('action.csv', 'w')
+f2 = open('generate.csv', 'w')
+writer = csv.writer(f)
+writer2 = csv.writer(f2)
 
 class EnvCore(object):
     
     def __init__(self, n_member=5):
         self.agent_num = 5
-        self.obs_dim = 5
-        self.action_dim = 5
-        self.dataset = np.random.rand(5, 5)
+        self.obs_dim = 7
+        self.action_dim = 7
+        self.dataset = np.random.rand(7, 7)
         self.writer = SummaryWriter(log_dir='runs/experiment_name')
         self.n_member = n_member
-        self.n_action = 5
+        self.n_action = 7
         self.action_space = gym.spaces.Dict(
             {
                 i: gym.spaces.Dict(
                     {
                         "p_thresholds": gym.spaces.Box(
-                            low=0, high=1, shape=(5,), dtype=float
+                            low=0, high=1, shape=(7,), dtype=float
                         ),
                         "n_thresholds": gym.spaces.Box(
-                            low=0, high=1, shape=(5,), dtype=float
+                            low=0, high=1, shape=(7,), dtype=float
                         ),
                         "matrix": gym.spaces.Box(
-                            low=0, high=1, shape=(5,), dtype=float
+                            low=0, high=1, shape=(7,), dtype=float
                         ),
                     }
                 )
@@ -37,7 +43,7 @@ class EnvCore(object):
         )
 
 
-        self.observation_space = gym.spaces.Dict({i: gym.spaces.Box(low=-1, high=1, shape=(5,), dtype=float) for i in range(self.n_member)})
+        self.observation_space = gym.spaces.Dict({i: gym.spaces.Box(low=-1, high=1, shape=(7,), dtype=float) for i in range(self.n_member)})
         self.time = 0
         self.log = []
         self.episode = 0
@@ -104,6 +110,9 @@ class EnvCore(object):
             self.log = []
             self.log.append(self.dataset)
         if done:
+            writer.writerow(action)
+            writer.writerow(subaction)
+            writer2.writerow(subsubaction)
             self.episode += 1
             self.log.append(self.dataset)
             self.log = torch.Tensor(self.log)
@@ -114,10 +123,7 @@ class EnvCore(object):
             self.writer.add_scalar('log/time', info['time'], self.step_count)
             self.writer.add_scalar('log/post_gsi', info['post_gsi'], self.step_count)
             self.log_reshaped = self.log.view(-1, self.log.shape[-1])  # reshape into 2D
-            self.writer.add_embedding(self.log_reshaped,
-                        global_step=self.episode,
-                        tag='dataset',
-                        metadata=['row_{}'.format(i) for i in range(self.log_reshaped.shape[0])])  # create a label for each row
+            self.reward_count = [0 for _ in range(self.n_member)]
         return observation, rewards, done, info
 
     def generate(self, subaction):
@@ -129,7 +135,7 @@ class EnvCore(object):
         self.time = 0
         self.criterion_type = self.set_criterion()
         self.agent = random.sample(range(self.n_member), self.n_member)
-        self.dataset = np.random.rand(5, 5)
+        self.dataset = np.random.rand(7, 7)
         self.first_ranking = self.get_ranking(self.F, self.dataset, self.criterion_type)
         observation = self.get_observation(self.first_ranking)
         return observation
@@ -143,13 +149,13 @@ class EnvCore(object):
     def set_criterion(self):
         type = ["max", "min"]
         prob = [0.7, 0.3]
-        self.criterion_type = np.random.choice(a=type, size=5, p=prob)
+        self.criterion_type = np.random.choice(a=type, size=7, p=prob)
         return self.criterion_type
 
     def get_satisfaction(self, id):
-        psi, gsi = self.calc_satisfaction(self.distance, self.first_ranking, 1, 5)
+        psi, gsi = self.calc_satisfaction(self.distance, self.first_ranking, 1, 7)
 
-        post_psi, post_gsi = self.calc_satisfaction(self.distance, self.ranking, 1, 5)
+        post_psi, post_gsi = self.calc_satisfaction(self.distance, self.ranking, 1, 7)
 
         params = {
             "pre_psi": psi[id],
@@ -166,20 +172,16 @@ class EnvCore(object):
         reward = 0
         clip = 0
 
-        main_reward = params["post_psi"] - params["pre_psi"]
-        sub_reward = params["post_gsi"] - params["pre_gsi"]
+        main_reward = params["post_psi"]
+        sub_reward = params["post_gsi"]
 
-        clip = main_reward + (sub_reward / self.n_member)
+        clip = main_reward + (sub_reward / self.n_member*2)
         max_reward = 1
         min_reward = -1
 
-        # 報酬の正規化
         clip = (clip - min_reward) / (max_reward - min_reward)
 
-        reward = clip  # 報酬として満足度の差分そのものを使用
-
-        # もしくは、満足度の絶対値を報酬として使用する場合
-        reward = abs(clip) - penalty
+        reward = clip - penalty
 
         return reward, post_psi, params
 
@@ -248,6 +250,12 @@ class EnvCore(object):
         total = sum(total)
         return total
 
+   
+    def solution(self):
+        result = [np.random.rand(1, 5)[0] for _ in range(self.n_member)]
+        return result
+    '''
+    
     def solution(self):
         solution = genetic_algorithm(
             population_size=5,
@@ -270,7 +278,8 @@ class EnvCore(object):
         result = [item for i in w_ for item in i]
 
         return result
-
+     '''
+     
     def distance_matrix(self, dataset, criteria=0):
         distance_array = np.zeros(shape=(dataset.shape[0], dataset.shape[0]))
         for i in range(0, distance_array.shape[0]):
@@ -398,7 +407,7 @@ class EnvCore(object):
         return observation
 
     def get_ranking(self, F, dataset, criterion_type):
-        self.W = [self.solution() for _ in range(5)]
+        self.W = self.solution()
         pref = ["t1", "t2", "t3", "t4", "t5", "t6"]
 
         p = {}
@@ -406,11 +415,11 @@ class EnvCore(object):
         for k in range(self.n_member):
             i = self.agent[k]
 
-            self.P[i] = [random.random() for _ in range(5)]
-            self.Q[i] = [random.uniform(0, self.P[i][j]) for j in range(5)]
-            S = [(self.P[i][j] + self.Q[i][j] / 2) for j in range(5)]
+            self.P[i] = [random.random() for _ in range(7)]
+            self.Q[i] = [random.uniform(0, self.P[i][j]) for j in range(7)]
+            S = [(self.P[i][j] + self.Q[i][j] / 2) for j in range(7)]
 
-            F[i] = [pref[random.randint(0, 5)] for _ in range(5)]
+            F[i] = [pref[random.randint(0, 5)] for _ in range(7)]
 
             self.pre_threshold = sum(S)
 
@@ -430,10 +439,10 @@ class EnvCore(object):
     def change_ranking(self, action, subaction, id, dataset, ranking):
         #self.P[id] = [x + y for (x, y) in zip(self.P[id], action.tolist())]
         self.P[id] += action
-        self.Q[id] =+ subaction
-        S = [(self.P[id][j] + self.Q[id][j]) / 2 for j in range(5)]
+        self.Q[id] += subaction
+        S = [(self.P[id][j] + self.Q[id][j]) / 2 for j in range(7)]
 
-        penalty = sum(S) - self.pre_threshold
+        penalty = abs(sum(S) - self.pre_threshold)
 
         ranking[id] = self.promethee_ii(
             dataset,
