@@ -252,7 +252,7 @@ class EnvCore(object):
 
    
     def solution(self):
-        result = [np.random.rand(1, 5)[0] for _ in range(self.n_member)]
+        result = [np.random.rand(1, 7)[0] for _ in range(self.n_member)]
         return result
     '''
     
