@@ -5,6 +5,7 @@ import math
 from scipy.special import softmax
 from envs.ga import genetic_algorithm
 from torch.utils.tensorboard import SummaryWriter
+from pymcdm.correlations import pearson
 import torch
 import csv
 
@@ -51,7 +52,7 @@ class EnvCore(object):
         self.agent = random.sample(range(self.n_member), self.n_member)
 
         self.criterion_type = self.set_criterion()
-        self.WP, self.w = self.idocriw_method(self.dataset, self.criterion_type)
+        #self.WP, self.w = self.idocriw_method(self.dataset, self.criterion_type)
 
         self.W = None
         self.P = {}
@@ -98,13 +99,14 @@ class EnvCore(object):
                 'dataset': self.dataset,
                 'post_gsi': params['post_gsi']
             }
+            self.step_count += 1
                     
         done = self.check_is_done(post_psis)
 
         if self.time% 25 == 0 and self.generator[0] == 0:
             self.generate(subsubaction)
         
-        self.step_count += 1
+        self.episode += 1
 
         if self.time == 1:
             self.log = []
@@ -113,7 +115,6 @@ class EnvCore(object):
             writer.writerow(action)
             writer.writerow(subaction)
             writer2.writerow(subsubaction)
-            self.episode += 1
             self.log.append(self.dataset)
             self.log = torch.Tensor(self.log)
             
@@ -375,27 +376,29 @@ class EnvCore(object):
 
     def distance(self, j, g_rank):
         return abs(j - g_rank) ** 2
-
+    
     def calc_satisfaction(self, func, p, frm, to):
-        result = 0
-        satisfaction = 0
         group_satisfaction = 0
         satisfaction_index = [0 for _ in range(self.n_member)]
         g_ranks = self.calc_group_rank(p)
-        g_ranks = g_ranks[np.argsort(g_ranks[:, 1])]
-        for k in range(0, len(p)):
+        
+        for k in range(self.n_member):
             i = self.agent[k]
-            i_ranks = p[i][np.argsort(p[1][:, 1])]
+            i_ranks = p[i]
 
-            for j in range(frm, to + 1):
-                g_rank = np.where(g_ranks == i_ranks[j - 1][0])[0][0] + 1
-                result += func(j, g_rank)
-
-            bottom = to**3 - to
-            satisfaction = 1 - 6 * result / bottom
-            group_satisfaction += satisfaction
+            # Check if all elements of the vectors are the same
+            if np.var(i_ranks[:, 1]) == 0 or np.var(g_ranks[:, 1]) == 0:
+                satisfaction = 1
+            else:
+                # スピアマンの相関係数の代わりにピアソンの相関係数を計算
+                satisfaction = pearson(i_ranks[:, 1], g_ranks[:, 1])
+            
             satisfaction_index[i] = satisfaction
+            group_satisfaction += satisfaction_index[i]
+        #print(satisfaction_index)
+        #print(group_satisfaction)
         return satisfaction_index, group_satisfaction
+
 
     def calc_group_rank(self, p):
         group_rank = np.copy(p[0])
