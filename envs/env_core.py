@@ -177,10 +177,6 @@ class EnvCore(object):
         sub_reward = params["post_gsi"]
 
         clip = main_reward + (sub_reward / self.n_member*2)
-        max_reward = 1
-        min_reward = -1
-
-        clip = (clip - min_reward) / (max_reward - min_reward)
 
         reward = clip - penalty
 
