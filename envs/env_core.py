@@ -440,13 +440,20 @@ class EnvCore(object):
             )
         return p
 
+    # The following is the modified 'change_ranking' function that introduces a scaling coefficient for the penalty
+
     def change_ranking(self, action, subaction, id, dataset, ranking):
-        #self.P[id] = [x + y for (x, y) in zip(self.P[id], action.tolist())]
         self.P[id] += action
         self.Q[id] += subaction
+        # Ensure p_thresholds is always larger than n_thresholds
+        for idx in range(len(self.P[id])):
+            if self.P[id][idx] < self.Q[id][idx]:
+                self.P[id][idx], self.Q[id][idx] = self.Q[id][idx], self.P[id][idx]
         S = [(self.P[id][j] + self.Q[id][j]) / 2 for j in range(7)]
 
-        penalty = abs(sum(S) - self.pre_threshold)
+        # Quadratic penalty with a scaling coefficient
+        scale = 0.01  # Adjust this value to control the impact of the penalty
+        penalty = scale * (sum(S) - self.pre_threshold)**2
 
         ranking[id] = self.promethee_ii(
             dataset,
@@ -460,3 +467,4 @@ class EnvCore(object):
             graph=False,
         )
         return ranking, penalty
+
