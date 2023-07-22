@@ -18,7 +18,7 @@ class EnvCore(object):
     
     def __init__(self, n_member=5):
         self.agent_num = 5
-        self.obs_dim = 7
+        self.obs_dim = 14
         self.action_dim = 7
         self.dataset = np.random.rand(7, 7)
         self.writer = SummaryWriter(log_dir='runs/experiment_name')
@@ -44,7 +44,7 @@ class EnvCore(object):
         )
 
 
-        self.observation_space = gym.spaces.Dict({i: gym.spaces.Box(low=-1, high=1, shape=(7,), dtype=float) for i in range(self.n_member)})
+        self.observation_space = gym.spaces.Dict({i: gym.spaces.Box(low=-1, high=1, shape=(7, 2), dtype=float) for i in range(self.n_member)})
         self.time = 0
         self.log = []
         self.episode = 0
@@ -184,10 +184,15 @@ class EnvCore(object):
 
     def get_observation(self, p):
         group_rank = self.calc_group_rank(p)
-        observation = [
-            group_rank[:, 1] - self.first_ranking[i][:, 1] for i in range(self.n_member)
-        ]
-        return observation
+        print(group_rank)
+        observations = []
+
+        for i in range(len(self.first_ranking)):
+            observation = group_rank.copy()
+            observation[:, 1] = group_rank[:, 1] - self.first_ranking[i][:, 1]
+            observations.append(observation)
+
+        return observations
 
     def check_is_done(self, post_psi):
         if all(0.8 <= flag for flag in post_psi):
