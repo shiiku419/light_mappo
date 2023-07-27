@@ -116,8 +116,8 @@ class EnvRunner(Runner):
         for agent_id in range(self.num_agents):
             if not self.use_centralized_V:
                 share_obs = np.array(list(obs[:, agent_id]))
-            self.buffer[agent_id].share_obs[0] = share_obs.copy().reshape(5,70)
-            self.buffer[agent_id].obs[0] = np.array(list(obs[:, agent_id])).copy().reshape(5,14)
+            self.buffer[agent_id].share_obs[0] = share_obs.copy().reshape(350)
+            self.buffer[agent_id].obs[0] = np.array(list(obs[:, agent_id])).copy().reshape(70)
 
     @torch.no_grad()
     def collect(self, step):

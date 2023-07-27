@@ -5,20 +5,22 @@ import math
 from scipy.special import softmax
 from envs.ga import genetic_algorithm
 from torch.utils.tensorboard import SummaryWriter
-from pymcdm.correlations import pearson
+from pymcdm.correlations import pearson, weighted_spearman
 import torch
 import csv
 
 f = open('action.csv', 'w')
 f2 = open('generate.csv', 'w')
+f3 = open('dataset.csv', 'w')
 writer = csv.writer(f)
 writer2 = csv.writer(f2)
+writer3 = csv.writer(f3)
 
 class EnvCore(object):
     
     def __init__(self, n_member=5):
         self.agent_num = 5
-        self.obs_dim = 14
+        self.obs_dim = 14*5
         self.action_dim = 7
         self.dataset = np.random.rand(7, 7)
         self.writer = SummaryWriter(log_dir='runs/experiment_name')
@@ -44,10 +46,18 @@ class EnvCore(object):
         )
 
 
-        self.observation_space = gym.spaces.Dict({i: gym.spaces.Box(low=-1, high=1, shape=(7, 2), dtype=float) for i in range(self.n_member)})
-        self.time = 0
+        self.observation_space = gym.spaces.Dict({
+            i: gym.spaces.Dict({
+                'ranking_difference': gym.spaces.Box(low=-10, high=10, shape=(self.n_member, 7, 2), dtype=float),
+                'thresholds': gym.spaces.Dict({
+                    'p_thresholds': gym.spaces.Box(low=0, high=1, shape=(7,), dtype=float),
+                    'n_thresholds': gym.spaces.Box(low=0, high=1, shape=(7,), dtype=float)
+                })
+            }) for i in range(self.n_member)
+        })
+
         self.log = []
-        self.episode = 0
+        self.episode = 1
         self.max_step = 100
         self.agent = random.sample(range(self.n_member), self.n_member)
 
@@ -57,15 +67,16 @@ class EnvCore(object):
         self.W = None
         self.P = {}
         self.Q = {}
-        self.F = {}
+        self.F = ['t6' for _ in range(7)]
 
+        self.pre_threshold = [[0 for _ in range(7)] for _ in range(self.n_member)]
         self.first_ranking = self.get_ranking(self.F, self.dataset, self.criterion_type)
 
         self.ranking = self.first_ranking.copy()
 
         self.reward_count = [0 for _ in range(self.n_member)]
-        self.pre_threshold = 0
         self.step_count = 0
+        self.time = 0
 
         self.params = {}
 
@@ -87,7 +98,8 @@ class EnvCore(object):
             self.ranking, penalty = self.change_ranking(
                 action, subaction, agent_id, self.dataset, self.ranking
             )
-            observation = self.get_observation(self.ranking)
+            _observation, observation = self.get_observation(self.ranking)
+
             reward, post_psi, params = self.get_reward(penalty, agent_id)
             self.reward_count[agent_id] += reward
             rewards.append(reward)
@@ -105,26 +117,26 @@ class EnvCore(object):
 
         if self.time% 25 == 0 and self.generator[0] == 0:
             self.generate(subsubaction)
-        
-        self.episode += 1
 
         if self.time == 1:
             self.log = []
-            self.log.append(self.dataset)
+            #self.log.append(self.dataset)
         if done:
-            writer.writerow(action)
-            writer.writerow(subaction)
-            writer2.writerow(subsubaction)
-            self.log.append(self.dataset)
-            self.log = torch.Tensor(self.log)
+            writer.writerow([self.episode, agent_id, '+', self.P[agent_id]])
+            writer.writerow([self.episode, agent_id, '-', self.Q[agent_id]])
+            writer2.writerow([self.episode, agent_id, subsubaction])
+            writer3.writerow([self.episode, self.dataset])
+            #self.log.append(self.dataset)
+            self.log = torch.Tensor(np.array(self.log))
             
             for i in range(self.n_member):
                 self.writer.add_scalar('post_psis/agent_{}'.format(i), info['post_psis'][i], self.step_count)
                 self.writer.add_scalar('reward/agent_{}'.format(i), info['reward'][i], self.step_count)
             self.writer.add_scalar('log/time', info['time'], self.step_count)
             self.writer.add_scalar('log/post_gsi', info['post_gsi'], self.step_count)
-            self.log_reshaped = self.log.view(-1, self.log.shape[-1])  # reshape into 2D
+            #self.log_reshaped = self.log.view(-1, self.log.shape[-1])  # reshape into 2D
             self.reward_count = [0 for _ in range(self.n_member)]
+            self.episode += 1
         return observation, rewards, done, info
 
     def generate(self, subaction):
@@ -137,8 +149,9 @@ class EnvCore(object):
         self.criterion_type = self.set_criterion()
         self.agent = random.sample(range(self.n_member), self.n_member)
         self.dataset = np.random.rand(7, 7)
+        writer3.writerow([self.episode, self.dataset])
         self.first_ranking = self.get_ranking(self.F, self.dataset, self.criterion_type)
-        observation = self.get_observation(self.first_ranking)
+        _, observation = self.get_observation(self.first_ranking)
         return observation
 
     def close(self):
@@ -173,7 +186,7 @@ class EnvCore(object):
         reward = 0
         clip = 0
 
-        main_reward = params["post_psi"]
+        main_reward = params["post_psi"] - max(penalty, 1e-10)
         sub_reward = params["post_gsi"]
 
         clip = main_reward + (sub_reward / self.n_member*2)
@@ -184,15 +197,12 @@ class EnvCore(object):
 
     def get_observation(self, p):
         group_rank = self.calc_group_rank(p)
-        print(group_rank)
         observations = []
 
         for i in range(len(self.first_ranking)):
-            observation = group_rank.copy()
-            observation[:, 1] = group_rank[:, 1] - self.first_ranking[i][:, 1]
-            observations.append(observation)
+            observations.append(self.first_ranking[i])
 
-        return observations
+        return observations, observations
 
     def check_is_done(self, post_psi):
         if all(0.8 <= flag for flag in post_psi):
@@ -256,31 +266,6 @@ class EnvCore(object):
     def solution(self):
         result = [np.random.rand(1, 7)[0] for _ in range(self.n_member)]
         return result
-    '''
-    
-    def solution(self):
-        solution = genetic_algorithm(
-            population_size=5,
-            mutation_rate=0.1,
-            elite=1,
-            min_values=[0] * self.WP.shape[1],
-            max_values=[1] * self.WP.shape[1],
-            eta=1,
-            mu=1,
-            generations=100,
-            target_function=self.target_function,
-        )
-        solution = solution[:-1]
-        solution = solution / sum(solution)
-        w_ = np.copy(self.w)
-        w_ = w_ * solution
-        w_ = w_ / w_.sum()
-        w_ = w_.T
-
-        result = [item for i in w_ for item in i]
-
-        return result
-     '''
      
     def distance_matrix(self, dataset, criteria=0):
         distance_array = np.zeros(shape=(dataset.shape[0], dataset.shape[0]))
@@ -386,18 +371,20 @@ class EnvCore(object):
         for k in range(self.n_member):
             i = self.agent[k]
             i_ranks = p[i]
+            w_i_rank = p[i][np.argsort(p[1][:, 1])]
 
             # Check if all elements of the vectors are the same
             if np.var(i_ranks[:, 1]) == 0 or np.var(g_ranks[:, 1]) == 0:
                 satisfaction = 1
             else:
-                # スピアマンの相関係数の代わりにピアソンの相関係数を計算
-                satisfaction = pearson(i_ranks[:, 1], g_ranks[:, 1])
+                p_satisfaction = (pearson(i_ranks[:, 1], g_ranks[:, 1])+1)/2
+                w_g_rank = g_ranks[np.argsort(g_ranks[:, 1])]
+                w_satisfaction = (weighted_spearman(np.flipud(w_i_rank), np.flipud(w_g_rank))+1)/2
+
+                satisfaction =  2 * (p_satisfaction * w_satisfaction) / (p_satisfaction + w_satisfaction)
             
             satisfaction_index[i] = satisfaction
             group_satisfaction += satisfaction_index[i]
-        #print(satisfaction_index)
-        #print(group_satisfaction)
         return satisfaction_index, group_satisfaction
 
 
@@ -419,13 +406,11 @@ class EnvCore(object):
         for k in range(self.n_member):
             i = self.agent[k]
 
-            self.P[i] = [random.random() for _ in range(7)]
+            self.P[i] = [random.random() * 10 for _ in range(7)]
             self.Q[i] = [random.uniform(0, self.P[i][j]) for j in range(7)]
-            S = [(self.P[i][j] + self.Q[i][j] / 2) for j in range(7)]
+            S = [(self.P[i][j] - self.Q[i][j]) if self.P[i][j] != self.Q[i][j] else 1e-10 for j in range(7)]
 
-            F[i] = [pref[random.randint(0, 5)] for _ in range(7)]
-
-            self.pre_threshold = sum(S)
+            self.pre_threshold[k] = S
 
             p[i] = self.promethee_ii(
                 dataset,
@@ -433,7 +418,7 @@ class EnvCore(object):
                 Q=self.Q[i],
                 S=S,
                 P=self.P[i],
-                F=F[i],
+                F=self.F,
                 sort=False,
                 topn=10,
                 graph=False,
@@ -443,17 +428,19 @@ class EnvCore(object):
     # The following is the modified 'change_ranking' function that introduces a scaling coefficient for the penalty
 
     def change_ranking(self, action, subaction, id, dataset, ranking):
-        self.P[id] += action
-        self.Q[id] += subaction
-        # Ensure p_thresholds is always larger than n_thresholds
-        for idx in range(len(self.P[id])):
-            if self.P[id][idx] < self.Q[id][idx]:
-                self.P[id][idx], self.Q[id][idx] = self.Q[id][idx], self.P[id][idx]
-        S = [(self.P[id][j] + self.Q[id][j]) / 2 for j in range(7)]
+        self.P[id] = np.clip(self.P[id] + action, 0, 10)
+        self.Q[id] = np.clip(self.Q[id] + subaction, 0, 10)
+
+        S = [(self.P[id][j] - self.Q[id][j]) if self.P[id][j] != self.Q[id][j] else 1e-10 for j in range(7)]
 
         # Quadratic penalty with a scaling coefficient
-        scale = 0.01  # Adjust this value to control the impact of the penalty
-        penalty = scale * (sum(S) - self.pre_threshold)**2
+        scale = 1/700  # Adjust this value to control the impact of the penalty
+        penalty = sum([scale * max(0, S[i] - self.pre_threshold[id][i])**2 for i in range(len(S))])
+        if penalty > 1.0:
+            print(penalty)
+            print(self.P[id])
+            print(self.Q[id])
+            print(S)
 
         ranking[id] = self.promethee_ii(
             dataset,
@@ -461,7 +448,7 @@ class EnvCore(object):
             Q=self.Q[id],
             S=S,
             P=self.P[id],
-            F=self.F[id],
+            F=self.F,
             sort=False,
             topn=10,
             graph=False,
