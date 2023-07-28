@@ -76,6 +76,7 @@ class EnvCore(object):
 
         self.reward_count = [0 for _ in range(self.n_member)]
         self.step_count = 0
+        self.penalty=[0 for _ in range(self.n_member)]
         self.time = 0
 
         self.params = {}
@@ -102,6 +103,8 @@ class EnvCore(object):
 
             reward, post_psi, params = self.get_reward(penalty, agent_id)
             self.reward_count[agent_id] += reward
+            self.penalty[agent_id] += penalty
+            
             rewards.append(reward)
             post_psis = post_psi
             info = {
@@ -109,7 +112,9 @@ class EnvCore(object):
                 'time': self.time,
                 'reward': self.reward_count,
                 'dataset': self.dataset,
-                'post_gsi': params['post_gsi']
+                'post_gsi': params['post_gsi'],
+                'penalty': self.penalty
+
             }
             self.step_count += 1
                     
@@ -132,10 +137,12 @@ class EnvCore(object):
             for i in range(self.n_member):
                 self.writer.add_scalar('post_psis/agent_{}'.format(i), info['post_psis'][i], self.step_count)
                 self.writer.add_scalar('reward/agent_{}'.format(i), info['reward'][i], self.step_count)
+                self.writer.add_scalar('penalty/agent_{}'.format(i), info['penalty'][i], self.step_count)
             self.writer.add_scalar('log/time', info['time'], self.step_count)
             self.writer.add_scalar('log/post_gsi', info['post_gsi'], self.step_count)
             #self.log_reshaped = self.log.view(-1, self.log.shape[-1])  # reshape into 2D
             self.reward_count = [0 for _ in range(self.n_member)]
+            self.penalty=[0 for _ in range(self.n_member)]
             self.episode += 1
         return observation, rewards, done, info
 
@@ -191,7 +198,7 @@ class EnvCore(object):
 
         clip = main_reward + (sub_reward / self.n_member*2)
 
-        reward = clip - penalty
+        reward = clip
 
         return reward, post_psi, params
 
