@@ -6,6 +6,8 @@ from scipy.special import softmax
 from envs.ga import genetic_algorithm
 from torch.utils.tensorboard import SummaryWriter
 from pymcdm.correlations import pearson, weighted_spearman
+from pymcdm.methods import PROMETHEE_II
+from pymcdm.helpers import rrankdata
 import torch
 import csv
 
@@ -60,6 +62,7 @@ class EnvCore(object):
         self.episode = 1
         self.max_step = 100
         self.agent = random.sample(range(self.n_member), self.n_member)
+        self.prom = PROMETHEE_II(preference_function='usual')
 
         self.criterion_type = self.set_criterion()
         #self.WP, self.w = self.idocriw_method(self.dataset, self.criterion_type)
@@ -87,7 +90,6 @@ class EnvCore(object):
 
         action = {}
         rewards = []
-        observations = {}
         post_psis = []
         done = False
         for agent_id in self.agent:
@@ -149,7 +151,9 @@ class EnvCore(object):
     def generate(self, subaction):
         random = np.random.randint(0, 4)
         index = np.where(self.ranking[random] == self.ranking[random].max(0)[1])[0][0]
-        self.dataset[index] = subaction.tolist()
+        self.dataset = np.insert(self.dataset, index, subaction.tolist(), axis=1)
+        print(self.dataset.shape)
+
 
     def reset(self):
         self.time = 0
@@ -216,40 +220,6 @@ class EnvCore(object):
             return True
         else:
             return self.time == self.max_step
-
-    def idocriw_method(self, dataset, criterion_type):
-        X = np.copy(dataset)
-        X = X / X.sum(axis=0)
-        X_ln = np.copy(dataset)
-        X_r = np.copy(dataset)
-        for i in range(0, X.shape[0]):
-            for j in range(0, X.shape[1]):
-                X_ln[i, j] = X[i, j] * math.log(X[i, j])
-        d = np.zeros((1, X.shape[1]))
-        self.w = np.zeros((1, X.shape[1]))
-        for i in range(0, d.shape[1]):
-            d[0, i] = 1 - (-1 / (math.log(d.shape[1])) * sum(X_ln[:, i]))
-        for i in range(0, self.w.shape[1]):
-            self.w[0, i] = d[0, i] / d.sum(axis=1)
-        for i in range(0, len(criterion_type)):
-            if criterion_type[i] == "min":
-                X_r[:, i] = dataset[:, i].min() / X_r[:, i]
-        X_r = X_r / X_r.sum(axis=0)
-        a_max = X_r.max(axis=0)
-        A = np.zeros(dataset.shape)
-        np.fill_diagonal(A, a_max)
-        for k in range(0, A.shape[0]):
-            i, _ = np.where(X_r == a_max[k])
-            i = i[0]
-            for j in range(0, A.shape[1]):
-                A[k, j] = X_r[i, j]
-        a_max_ = A.max(axis=0)
-        P = np.copy(A)
-        for i in range(0, P.shape[1]):
-            P[:, i] = (-P[:, i] + a_max_[i]) / a_max[i]
-        self.WP = np.copy(P)
-        np.fill_diagonal(self.WP, -P.sum(axis=0))
-        return self.WP, self.w
 
     def target_function(self, variable):
         epsilon = 1e-8
@@ -380,7 +350,6 @@ class EnvCore(object):
             i_ranks = p[i]
             w_i_rank = p[i][np.argsort(p[1][:, 1])]
 
-            # Check if all elements of the vectors are the same
             if np.var(i_ranks[:, 1]) == 0 or np.var(g_ranks[:, 1]) == 0:
                 satisfaction = 1
             else:
@@ -406,12 +375,11 @@ class EnvCore(object):
 
     def get_ranking(self, F, dataset, criterion_type):
         self.W = self.solution()
-        pref = ["t1", "t2", "t3", "t4", "t5", "t6"]
-
-        p = {}
+        rank = {}
 
         for k in range(self.n_member):
             i = self.agent[k]
+            p = []
 
             self.P[i] = [random.random() * 10 for _ in range(7)]
             self.Q[i] = [random.uniform(0, self.P[i][j]) for j in range(7)]
@@ -419,46 +387,35 @@ class EnvCore(object):
 
             self.pre_threshold[k] = S
 
-            p[i] = self.promethee_ii(
-                dataset,
-                W=self.W[i],
-                Q=self.Q[i],
-                S=S,
-                P=self.P[i],
-                F=self.F,
-                sort=False,
-                topn=10,
-                graph=False,
-            )
-        return p
+            pref = self.prom(dataset, self.W[i], self.F, p=self.P[i], q=self.Q[i])
+            ranking = rrankdata(pref)
+            
+            for R, P in zip(ranking, pref):
+                p.append([R, P])
+                
+            p = np.vstack(p)
+            rank[i] = p
 
-    # The following is the modified 'change_ranking' function that introduces a scaling coefficient for the penalty
+        return rank
 
-    def change_ranking(self, action, subaction, id, dataset, ranking):
+    def change_ranking(self, action, subaction, id, dataset, p):
         self.P[id] = np.clip(self.P[id] + action, 0, 10)
         self.Q[id] = np.clip(self.Q[id] + subaction, 0, 10)
+        rank = []
 
         S = [(self.P[id][j] - self.Q[id][j]) if self.P[id][j] != self.Q[id][j] else 1e-10 for j in range(7)]
 
-        # Quadratic penalty with a scaling coefficient
-        scale = 1/700  # Adjust this value to control the impact of the penalty
+        scale = 1/700
         penalty = sum([scale * max(0, S[i] - self.pre_threshold[id][i])**2 for i in range(len(S))])
-        if penalty > 1.0:
-            print(penalty)
-            print(self.P[id])
-            print(self.Q[id])
-            print(S)
 
-        ranking[id] = self.promethee_ii(
-            dataset,
-            W=self.W[id],
-            Q=self.Q[id],
-            S=S,
-            P=self.P[id],
-            F=self.F,
-            sort=False,
-            topn=10,
-            graph=False,
-        )
-        return ranking, penalty
+        pref = self.prom(dataset, self.W[id], self.F, p=self.P[id], q=self.Q[id])
+        ranking = rrankdata(pref)
+        
+        for R, P in zip(ranking, pref):
+            rank.append([R, P])
+
+        rank = np.vstack(rank)
+        p[id] = rank
+
+        return p, penalty
 
