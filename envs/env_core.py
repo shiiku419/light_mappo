@@ -1,9 +1,6 @@
 import gym.spaces
 import numpy as np
 import random
-import math
-from scipy.special import softmax
-from envs.ga import genetic_algorithm
 from torch.utils.tensorboard import SummaryWriter
 from pymcdm.correlations import pearson, weighted_spearman
 from pymcdm.methods import PROMETHEE_II
@@ -65,7 +62,6 @@ class EnvCore(object):
         self.prom = PROMETHEE_II(preference_function='usual')
 
         self.criterion_type = self.set_criterion()
-        #self.WP, self.w = self.idocriw_method(self.dataset, self.criterion_type)
 
         self.W = None
         self.P = {}
@@ -101,6 +97,7 @@ class EnvCore(object):
             self.ranking, penalty = self.change_ranking(
                 action, subaction, agent_id, self.dataset, self.ranking
             )
+            self.ranking = self.update_ranking(self.F, self.dataset, self.criterion_type)
             _observation, observation = self.get_observation(self.ranking)
 
             reward, post_psi, params = self.get_reward(penalty, agent_id)
@@ -122,7 +119,7 @@ class EnvCore(object):
                     
         done = self.check_is_done(post_psis)
 
-        if self.time% 25 == 0 and self.generator[0] == 0:
+        if self.time % 25 == 0 and self.generator[0] == 0:
             self.generate(subsubaction)
 
         if self.time == 1:
@@ -148,12 +145,28 @@ class EnvCore(object):
             self.episode += 1
         return observation, rewards, done, info
 
+    def update_ranking(self, F, dataset, criterion_type):
+        rank = {}
+
+        for k in range(self.n_member):
+            i = self.agent[k]
+            p = []
+
+            pref = self.prom(dataset, self.W[i], self.F, p=self.P[i], q=self.Q[i])
+            ranking = rrankdata(pref)
+            
+            for R, P in zip(ranking, pref):
+                p.append([R, P])
+                
+            p = np.vstack(p)
+            rank[i] = p
+
+        return rank
+
     def generate(self, subaction):
         random = np.random.randint(0, 4)
         index = np.where(self.ranking[random] == self.ranking[random].max(0)[1])[0][0]
-        self.dataset = np.insert(self.dataset, index, subaction.tolist(), axis=1)
-        print(self.dataset.shape)
-
+        self.dataset = np.insert(self.dataset, index, subaction.tolist(), axis=0)
 
     def reset(self):
         self.time = 0
@@ -200,14 +213,13 @@ class EnvCore(object):
         main_reward = params["post_psi"] - max(penalty, 1e-10)
         sub_reward = params["post_gsi"]
 
-        clip = main_reward + (sub_reward / self.n_member*2)
+        clip = main_reward #+ (sub_reward / self.n_member*2)
 
         reward = clip
 
         return reward, post_psi, params
 
     def get_observation(self, p):
-        group_rank = self.calc_group_rank(p)
         observations = []
 
         for i in range(len(self.first_ranking)):
@@ -220,122 +232,6 @@ class EnvCore(object):
             return True
         else:
             return self.time == self.max_step
-
-    def target_function(self, variable):
-        epsilon = 1e-8
-        variable_sum = sum(variable)
-
-        if variable_sum > epsilon:
-            variable = [
-                variable[i] / (variable_sum + epsilon) for i in range(0, len(variable))
-            ]
-        else:
-            variable = [variable[i] / sum(variable) for i in range(0, len(variable))]
-        WP_s = np.copy(self.WP)
-        for i in range(0, self.WP.shape[0]):
-            for j in range(0, self.WP.shape[1]):
-                WP_s[i, j] = WP_s[i, j] * variable[j]
-        total = abs(WP_s.sum(axis=1))
-        total = sum(total)
-        return total
-
-   
-    def solution(self):
-        result = [np.random.rand(1, 7)[0] for _ in range(self.n_member)]
-        return result
-     
-    def distance_matrix(self, dataset, criteria=0):
-        distance_array = np.zeros(shape=(dataset.shape[0], dataset.shape[0]))
-        for i in range(0, distance_array.shape[0]):
-            for j in range(0, distance_array.shape[1]):
-                distance_array[i, j] = dataset[i, criteria] - dataset[j, criteria]
-        return distance_array
-
-    def preference_degree(self, dataset, W, Q, S, P, F):
-        pd_array = np.zeros(shape=(dataset.shape[0], dataset.shape[0]))
-        for k in range(0, dataset.shape[1]):
-            distance_array = self.distance_matrix(dataset, criteria=k)
-            for i in range(0, distance_array.shape[0]):
-                for j in range(0, distance_array.shape[1]):
-                    if i != j:
-                        if F[k] == "t1":
-                            if distance_array[i, j] <= 0:
-                                distance_array[i, j] = 0
-                            else:
-                                distance_array[i, j] = 1
-                        if F[k] == "t2":
-                            if distance_array[i, j] <= Q[k]:
-                                distance_array[i, j] = 0
-                            else:
-                                distance_array[i, j] = 1
-                        if F[k] == "t3":
-                            if distance_array[i, j] <= 0:
-                                distance_array[i, j] = 0
-                            elif (
-                                distance_array[i, j] > 0
-                                and distance_array[i, j] <= P[k]
-                            ):
-                                distance_array[i, j] = distance_array[i, j] / P[k]
-                            else:
-                                distance_array[i, j] = 1
-                        if F[k] == "t4":
-                            if distance_array[i, j] <= Q[k]:
-                                distance_array[i, j] = 0
-                            elif (
-                                distance_array[i, j] > Q[k]
-                                and distance_array[i, j] <= P[k]
-                            ):
-                                distance_array[i, j] = 0.5
-                            else:
-                                distance_array[i, j] = 1
-                        if F[k] == "t5":
-                            if distance_array[i, j] <= Q[k]:
-                                distance_array[i, j] = 0
-                            elif (
-                                distance_array[i, j] > Q[k]
-                                and distance_array[i, j] <= P[k]
-                            ):
-                                distance_array[i, j] = (distance_array[i, j] - Q[k]) / (
-                                    P[k] - Q[k]
-                                )
-                            else:
-                                distance_array[i, j] = 1
-                        if F[k] == "t6":
-                            if distance_array[i, j] <= 0:
-                                distance_array[i, j] = 0
-                            else:
-                                distance_array[i, j] = 1 - math.exp(
-                                    -(distance_array[i, j] ** 2) / (2 * S[k] ** 2)
-                                )
-                        if F[k] == "t7":
-                            if distance_array[i, j] == 0:
-                                distance_array[i, j] = 0
-                            elif (
-                                distance_array[i, j] > 0
-                                and distance_array[i, j] <= S[k]
-                            ):
-                                distance_array[i, j] = (
-                                    distance_array[i, j] / S[k]
-                                ) ** 0.5
-                            elif distance_array[i, j] > S[k]:
-                                distance_array[i, j] = 1
-            pd_array = pd_array + softmax(W, axis=0)[k] * distance_array
-        return pd_array
-
-    def promethee_ii(self, dataset, W, Q, S, P, F, sort=True, topn=0, graph=False):
-        pd_matrix = self.preference_degree(dataset, W, Q, S, P, F)
-        flow_plus = np.sum(pd_matrix, axis=1) / (pd_matrix.shape[0] - 1)
-        flow_minus = np.sum(pd_matrix, axis=0) / (pd_matrix.shape[0] - 1)
-        flow = flow_plus - flow_minus
-        flow = np.reshape(flow, (pd_matrix.shape[0], 1))
-        flow = np.insert(flow, 0, list(range(1, pd_matrix.shape[0] + 1)), axis=1)
-        if sort == True or graph == True:
-            flow = flow[np.argsort(flow[:, 1])]
-            flow = flow[::-1]
-        if topn > 0:
-            if topn > pd_matrix.shape[0]:
-                topn = pd_matrix.shape[0]
-        return flow
 
     def distance(self, j, g_rank):
         return abs(j - g_rank) ** 2
@@ -369,12 +265,11 @@ class EnvCore(object):
         for i in range(1, len(p)):
             group_rank += p[i]
         group_rank = group_rank / len(p)
-        # group_rank = group_rank[np.argsort(group_rank[:, 1])]
         observation = group_rank
         return observation
 
     def get_ranking(self, F, dataset, criterion_type):
-        self.W = self.solution()
+        self.W = [np.random.rand(1, 7)[0] for _ in range(self.n_member)]
         rank = {}
 
         for k in range(self.n_member):
