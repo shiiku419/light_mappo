@@ -94,13 +94,13 @@ class EnvCore(object):
             action = split_actions[0].flatten()
             subaction = split_actions[1].flatten()
             subsubaction = split_actions[2].flatten()
-            self.ranking, penalty = self.change_ranking(
+            self.ranking = self.change_ranking(
                 action, subaction, agent_id, self.dataset, self.ranking
             )
             self.ranking = self.update_ranking(self.F, self.dataset, self.criterion_type)
             _observation, observation = self.get_observation(self.ranking)
 
-            reward, post_psi, params = self.get_reward(penalty, agent_id)
+            reward, post_psi, params, penalty = self.get_reward(penalty, agent_id)
             self.reward_count[agent_id] += reward
             self.penalty[agent_id] += penalty
             
@@ -191,9 +191,9 @@ class EnvCore(object):
         return self.criterion_type
 
     def get_satisfaction(self, id):
-        psi, gsi = self.calc_satisfaction(self.distance, self.first_ranking, 1, 7)
+        psi, gsi = self.calc_satisfaction(self.distance, self.first_ranking, 1, 7, id)
 
-        post_psi, post_gsi = self.calc_satisfaction(self.distance, self.ranking, 1, 7)
+        post_psi, post_gsi = self.calc_satisfaction(self.distance, self.ranking, 1, 7, id)
 
         params = {
             "pre_psi": psi[id],
@@ -207,17 +207,20 @@ class EnvCore(object):
     def get_reward(self, penalty, id):
         params, post_psi = self.get_satisfaction(id)
 
-        reward = 0
-        clip = 0
+        # Threshold-based reward
+        threshold_change_penalty = sum([abs(self.P[id][i] - self.pre_threshold[id][i]) for i in range(len(self.P[id]))])
+        threshold_change_penalty += sum([abs(self.Q[id][i] - self.pre_threshold[id][i]) for i in range(len(self.Q[id]))])
 
-        main_reward = params["post_psi"] - max(penalty, 1e-10)
+        # Calculate the final reward
+        main_reward = params["post_psi"] - threshold_change_penalty
         sub_reward = params["post_gsi"]
 
-        clip = main_reward #+ (sub_reward / self.n_member*2)
+        clip = main_reward  # here we don't add threshold_reward to the final reward
 
         reward = clip
 
-        return reward, post_psi, params
+        return reward, post_psi, params, penalty
+
 
     def get_observation(self, p):
         observations = []
@@ -236,10 +239,10 @@ class EnvCore(object):
     def distance(self, j, g_rank):
         return abs(j - g_rank) ** 2
     
-    def calc_satisfaction(self, func, p, frm, to):
+    def calc_satisfaction(self, func, p, frm, to, id):
         group_satisfaction = 0
         satisfaction_index = [0 for _ in range(self.n_member)]
-        g_ranks = self.calc_group_rank(p)
+        g_ranks = self.calc_group_rank(p, id)
         
         for k in range(self.n_member):
             i = self.agent[k]
@@ -260,13 +263,21 @@ class EnvCore(object):
         return satisfaction_index, group_satisfaction
 
 
-    def calc_group_rank(self, p):
-        group_rank = np.copy(p[0])
-        for i in range(1, len(p)):
-            group_rank += p[i]
-        group_rank = group_rank / len(p)
-        observation = group_rank
-        return observation
+    def calc_group_rank(self, p, exclude_id):
+        # Check if only one member is present. If yes, return the ranking for the member itself.
+        if len(p) == 1:
+            return p[0]
+
+        # Sum up all the rankings except for the excluded member.
+        group_rank = np.zeros_like(p[0])
+        for i in range(len(p)):
+            if i != exclude_id:
+                group_rank += p[i]
+
+        # Compute the average ranking (excluding the member).
+        group_rank = group_rank / (len(p) - 1)
+
+        return group_rank
 
     def get_ranking(self, F, dataset, criterion_type):
         self.W = [np.random.rand(1, 7)[0] for _ in range(self.n_member)]
@@ -298,11 +309,6 @@ class EnvCore(object):
         self.Q[id] = np.clip(self.Q[id] + subaction, 0, 10)
         rank = []
 
-        S = [(self.P[id][j] - self.Q[id][j]) if self.P[id][j] != self.Q[id][j] else 1e-10 for j in range(7)]
-
-        scale = 1/700
-        penalty = sum([scale * max(0, S[i] - self.pre_threshold[id][i])**2 for i in range(len(S))])
-
         pref = self.prom(dataset, self.W[id], self.F, p=self.P[id], q=self.Q[id])
         ranking = rrankdata(pref)
         
@@ -312,5 +318,5 @@ class EnvCore(object):
         rank = np.vstack(rank)
         p[id] = rank
 
-        return p, penalty
+        return p
 
