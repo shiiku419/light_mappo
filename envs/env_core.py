@@ -230,8 +230,9 @@ class EnvCore(object):
         params, post_psi = self.get_satisfaction(id)
 
         # Threshold-based reward
-        threshold_change_penalty = sum([abs(self.P[id][i] - self.pre_threshold[id][i]) for i in range(len(self.P[id]))])
-        threshold_change_penalty += sum([abs(self.Q[id][i] - self.pre_threshold[id][i]) for i in range(len(self.Q[id]))])
+        penalty_coeff = 1/70
+        threshold_change_penalty = penalty_coeff * sum([abs(self.P[id][i] - self.pre_threshold[id][i]) / (self.pre_threshold[id][i] + 1e-10) for i in range(len(self.P[id]))])
+        threshold_change_penalty += penalty_coeff * sum([abs(self.Q[id][i] - self.pre_threshold[id][i]) / (self.pre_threshold[id][i] + 1e-10) for i in range(len(self.Q[id]))])
 
         # Calculate the final reward
         main_reward = params["post_psi"] - threshold_change_penalty
