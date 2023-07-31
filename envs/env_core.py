@@ -56,7 +56,7 @@ class EnvCore(object):
         })
 
         self.log = []
-        self.episode = 1
+        self.episode = 0
         self.max_step = 100
         self.agent = random.sample(range(self.n_member), self.n_member)
         self.prom = PROMETHEE_II(preference_function='usual')
@@ -79,13 +79,23 @@ class EnvCore(object):
         self.time = 0
 
         self.params = {}
+        self.rewards = [0 for _ in range(self.n_member)]
+        self.logger = self.create_new_writer(self.episode)
+        self.logger2 = self.create_new_writer2(self.episode)
+        
+    def create_new_writer(self, episode):
+        self.f = open(f'logs/action_{episode}.csv', 'w')
+        return csv.writer(self.f)
+    
+    def create_new_writer2(self, episode):
+        self.f2 = open(f'logs2/action_{episode}.csv', 'w')
+        return csv.writer(self.f2)
 
     def step(self, actions):
         self.time += 1
         self.generator = random.sample(range(self.n_member), self.n_member)
 
         action = {}
-        rewards = []
         post_psis = []
         done = False
         for agent_id in self.agent:
@@ -99,12 +109,15 @@ class EnvCore(object):
             )
             self.ranking = self.update_ranking(self.F, self.dataset, self.criterion_type)
             _observation, observation = self.get_observation(self.ranking)
+            
+            self.logger.writerow([self.step_count, agent_id, '+', self.P[agent_id]])
+            self.logger.writerow([self.step_count, agent_id, '-', self.Q[agent_id]])
 
-            reward, post_psi, params, penalty = self.get_reward(penalty, agent_id)
+            reward, post_psi, params, penalty = self.get_reward(agent_id)
             self.reward_count[agent_id] += reward
             self.penalty[agent_id] += penalty
             
-            rewards.append(reward)
+            self.rewards[agent_id] = reward
             post_psis = post_psi
             info = {
                 'post_psis': post_psis,
@@ -113,21 +126,19 @@ class EnvCore(object):
                 'dataset': self.dataset,
                 'post_gsi': params['post_gsi'],
                 'penalty': self.penalty
-
             }
             self.step_count += 1
-                    
-        done = self.check_is_done(post_psis)
+
+        done = self.check_is_done(post_psi)
 
         if self.time % 25 == 0 and self.generator[0] == 0:
             self.generate(subsubaction)
+            self.logger2.writerow([self.step_count, agent_id, subsubaction])
 
         if self.time == 1:
             self.log = []
             #self.log.append(self.dataset)
         if done:
-            writer.writerow([self.episode, agent_id, '+', self.P[agent_id]])
-            writer.writerow([self.episode, agent_id, '-', self.Q[agent_id]])
             writer2.writerow([self.episode, agent_id, subsubaction])
             writer3.writerow([self.episode, self.dataset])
             #self.log.append(self.dataset)
@@ -141,9 +152,11 @@ class EnvCore(object):
             self.writer.add_scalar('log/post_gsi', info['post_gsi'], self.step_count)
             #self.log_reshaped = self.log.view(-1, self.log.shape[-1])  # reshape into 2D
             self.reward_count = [0 for _ in range(self.n_member)]
-            self.penalty=[0 for _ in range(self.n_member)]
-            self.episode += 1
-        return observation, rewards, done, info
+            self.penalty = [0 for _ in range(self.n_member)]
+            self.f.close()
+            self.f2.close()
+
+        return [observation, self.rewards, done, info]
 
     def update_ranking(self, F, dataset, criterion_type):
         rank = {}
@@ -169,6 +182,10 @@ class EnvCore(object):
         self.dataset = np.insert(self.dataset, index, subaction.tolist(), axis=0)
 
     def reset(self):
+        self.episode += 1
+        self.rewards = [0 for _ in range(self.n_member)]
+        self.logger = self.create_new_writer(self.episode)
+        self.logger = self.create_new_writer2(self.episode)
         self.time = 0
         self.criterion_type = self.set_criterion()
         self.agent = random.sample(range(self.n_member), self.n_member)
@@ -183,6 +200,11 @@ class EnvCore(object):
 
     def seed(self):
         pass
+
+    def check_is_done(self, post_psi):
+        if all(psi >= 0.8 for psi in post_psi):
+            return True
+        return self.time == self.max_step
 
     def set_criterion(self):
         type = ["max", "min"]
@@ -204,7 +226,7 @@ class EnvCore(object):
 
         return params, post_psi
 
-    def get_reward(self, penalty, id):
+    def get_reward(self, id):
         params, post_psi = self.get_satisfaction(id)
 
         # Threshold-based reward
@@ -213,13 +235,12 @@ class EnvCore(object):
 
         # Calculate the final reward
         main_reward = params["post_psi"] - threshold_change_penalty
-        sub_reward = params["post_gsi"]
 
         clip = main_reward  # here we don't add threshold_reward to the final reward
 
         reward = clip
 
-        return reward, post_psi, params, penalty
+        return reward, post_psi, params, threshold_change_penalty
 
 
     def get_observation(self, p):
@@ -229,12 +250,6 @@ class EnvCore(object):
             observations.append(self.first_ranking[i])
 
         return observations, observations
-
-    def check_is_done(self, post_psi):
-        if all(0.8 <= flag for flag in post_psi):
-            return True
-        else:
-            return self.time == self.max_step
 
     def distance(self, j, g_rank):
         return abs(j - g_rank) ** 2
@@ -264,15 +279,11 @@ class EnvCore(object):
 
 
     def calc_group_rank(self, p, exclude_id):
-        # Check if only one member is present. If yes, return the ranking for the member itself.
-        if len(p) == 1:
-            return p[0]
-
         # Sum up all the rankings except for the excluded member.
         group_rank = np.zeros_like(p[0])
         for i in range(len(p)):
             if i != exclude_id:
-                group_rank += p[i]
+                group_rank += p[i][np.argsort(p[1][:, 1])]
 
         # Compute the average ranking (excluding the member).
         group_rank = group_rank / (len(p) - 1)
