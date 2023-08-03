@@ -67,6 +67,8 @@ class R_Actor(nn.Module):
         if available_actions is not None:
             available_actions = check(available_actions).to(**self.tpdv)
 
+        obs = obs.view(5, -1)  # or obs = obs.reshape(5, -1) in numpy
+
         actor_features = self.base(obs)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:

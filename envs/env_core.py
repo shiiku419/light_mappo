@@ -19,12 +19,12 @@ class EnvCore(object):
     
     def __init__(self, n_member=5):
         self.agent_num = 5
-        self.obs_dim = 14*5
-        self.action_dim = 7
+        self.obs_dim = 14 * 5
+        self.action_dim = 21 + 1
         self.dataset = np.random.rand(7, 7)
         self.writer = SummaryWriter(log_dir='runs/experiment_name')
         self.n_member = n_member
-        self.n_action = 7
+        self.n_action = 4
         self.action_space = gym.spaces.Dict(
             {
                 i: gym.spaces.Dict(
@@ -38,6 +38,7 @@ class EnvCore(object):
                         "matrix": gym.spaces.Box(
                             low=0, high=1, shape=(7,), dtype=float
                         ),
+                        "propose": gym.spaces.Discrete(2),
                     }
                 )
                 for i in range(self.n_member)
@@ -93,20 +94,24 @@ class EnvCore(object):
 
     def step(self, actions):
         self.time += 1
-        self.generator = random.sample(range(self.n_member), self.n_member)
-
         action = {}
         post_psis = []
         done = False
         for agent_id in self.agent:
             default_action = actions[agent_id]
-            split_actions = np.array_split(default_action, 3)
+            split_actions = np.array_split(default_action[:-1], 3)
             action = split_actions[0].flatten()
             subaction = split_actions[1].flatten()
             subsubaction = split_actions[2].flatten()
+            propose = default_action[-1]
             self.ranking = self.change_ranking(
                 action, subaction, agent_id, self.dataset, self.ranking
             )
+
+            if propose == 1:
+                self.generate(subsubaction)
+                self.logger2.writerow([self.step_count, agent_id, subsubaction])
+            
             self.ranking = self.update_ranking(self.F, self.dataset, self.criterion_type)
             _observation, observation = self.get_observation(self.ranking)
             
@@ -131,13 +136,6 @@ class EnvCore(object):
 
         done = self.check_is_done(post_psi)
 
-        if self.time % 25 == 0 and self.generator[0] == 0:
-            self.generate(subsubaction)
-            self.logger2.writerow([self.step_count, agent_id, subsubaction])
-
-        if self.time == 1:
-            self.log = []
-            #self.log.append(self.dataset)
         if done:
             writer2.writerow([self.episode, agent_id, subsubaction])
             writer3.writerow([self.episode, self.dataset])
@@ -177,15 +175,13 @@ class EnvCore(object):
         return rank
 
     def generate(self, subaction):
-        random = np.random.randint(0, 4)
-        index = np.where(self.ranking[random] == self.ranking[random].max(0)[1])[0][0]
-        self.dataset = np.insert(self.dataset, index, subaction.tolist(), axis=0)
+        self.dataset = np.insert(self.dataset, 0, subaction.tolist(), axis=0)
 
     def reset(self):
         self.episode += 1
         self.rewards = [0 for _ in range(self.n_member)]
         self.logger = self.create_new_writer(self.episode)
-        self.logger = self.create_new_writer2(self.episode)
+        self.logger2 = self.create_new_writer2(self.episode)
         self.time = 0
         self.criterion_type = self.set_criterion()
         self.agent = random.sample(range(self.n_member), self.n_member)
@@ -193,6 +189,7 @@ class EnvCore(object):
         writer3.writerow([self.episode, self.dataset])
         self.first_ranking = self.get_ranking(self.F, self.dataset, self.criterion_type)
         _, observation = self.get_observation(self.first_ranking)
+        #TODO add thresholds
         return observation
 
     def close(self):
@@ -317,13 +314,18 @@ class EnvCore(object):
         return rank
 
     def change_ranking(self, action, subaction, id, dataset, p):
-        self.P[id] = np.clip(self.P[id] + action, 0, 10)
-        self.Q[id] = np.clip(self.Q[id] + subaction, 0, 10)
+        p_delta = np.abs(action)  # Ensure p_delta is positive
+        n_delta = np.abs(subaction)  # Ensure n_delta is positive
+        # p_threshold should always be greater than n_threshold
+        p_update = np.maximum(self.P[id] + p_delta, self.Q[id] + n_delta)
+        n_update = np.minimum(self.P[id] + p_delta, self.Q[id] + n_delta)
+        self.P[id] = np.clip(p_update, 0, 10)
+        self.Q[id] = np.clip(n_update, 0, 10)
         rank = []
 
         pref = self.prom(dataset, self.W[id], self.F, p=self.P[id], q=self.Q[id])
         ranking = rrankdata(pref)
-        
+
         for R, P in zip(ranking, pref):
             rank.append([R, P])
 
@@ -331,4 +333,3 @@ class EnvCore(object):
         p[id] = rank
 
         return p
-

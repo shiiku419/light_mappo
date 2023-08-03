@@ -171,19 +171,29 @@ class EnvRunner(Runner):
             for temp_action_env in temp_actions_env:
                 one_hot_action_env.append(temp_action_env[i])
             actions_env.append(one_hot_action_env)
-
+            
+            
         values = np.array(values).transpose(1, 0, 2)
-        #actions = np.array(actions).transpose(1, 0, 2)
-        actions = np.array(actions)
-        actions = np.squeeze(actions, axis=-1)  # Remove last dimension
-        actions = actions.transpose(1, 0, 2)  # Transpose the array
-        #action_log_probs = np.array(action_log_probs).transpose(1, 0, 2)
-        action_log_probs = np.array(action_log_probs)
-        action_log_probs = np.squeeze(action_log_probs, axis=-1)  # Remove last dimension
-        action_log_probs = action_log_probs.transpose(1, 0, 2)  # Transpose the array
+        actions = np.array(actions).transpose(1, 0, 2)
+        action_log_probs = np.array(action_log_probs).transpose(1, 0, 2)
         rnn_states = np.array(rnn_states).transpose(1, 0, 2, 3)
         rnn_states_critic = np.array(rnn_states_critic).transpose(1, 0, 2, 3)
 
+        '''
+        values = np.array(values).transpose(1, 0, 2)
+        #actions = np.array(actions).transpose(1, 0, 2)
+        actions = np.array(actions)
+        if actions.shape[-1] == 1:
+            actions = np.squeeze(actions, axis=-1)  # Remove last dimension
+        actions = actions.transpose(1, 0, 2)  # Transpose the array
+        action_log_probs = np.array(action_log_probs).transpose(1, 0, 2)
+        action_log_probs = np.array(action_log_probs)
+        action_log_probs = np.squeeze(action_log_probs, axis=-1)  # Remove last dimension
+        #action_log_probs = action_log_probs.transpose(1, 0)
+        #action_log_probs = action_log_probs.transpose(1, 0, 2)  # Transpose the array
+        rnn_states = np.array(rnn_states).transpose(1, 0, 2, 3)
+        rnn_states_critic = np.array(rnn_states_critic).transpose(1, 0, 2, 3)
+        '''
         return (
             values,
             actions,

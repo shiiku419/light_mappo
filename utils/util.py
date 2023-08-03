@@ -1,6 +1,7 @@
 import numpy as np
 import math
 import torch
+from gym import spaces
 
 def check(input):
     if type(input) == np.ndarray:
@@ -33,6 +34,8 @@ def get_shape_from_obs_space(obs_space):
         obs_shape = obs_space.shape
     elif obs_space.__class__.__name__ == 'list':
         obs_shape = obs_space
+    elif obs_space.__class__.__name__ == 'Dict':
+        obs_shape = (70,)
     else:
         raise NotImplementedError
     return obs_shape
@@ -43,7 +46,18 @@ def get_shape_from_act_space(act_space):
     elif act_space.__class__.__name__ == "MultiDiscrete":
         act_shape = act_space.shape
     elif act_space.__class__.__name__ == "Box":
-        act_shape = 21 #act_space.shape[0]
+        act_shape = 21 + 1 #act_space.shape[0]
+    elif act_space.__class__.__name__ == "Dict":
+        # If the action space is a Dict, we need to handle each subspace
+        act_shape = 21 + 1
+        '''
+        for space in act_space.values():
+            if isinstance(space, spaces.Box):
+                act_shape += np.prod(space.shape)
+            elif isinstance(space, spaces.Discrete):
+                act_shape += space.n
+            # Add other space types if necessary
+        '''
     elif act_space.__class__.__name__ == "MultiBinary":
         act_shape = act_space.shape[0]
     else:  # agar

@@ -31,12 +31,20 @@ class ContinuousActionEnv(object):
         total_action_space = []
         for agent in range(self.num_agent):
             # physical action space
-            u_action_space = spaces.Box(
-                low=-np.inf,
-                high=+np.inf,
-                shape=(self.signal_action_dim,),
-                dtype=np.float32,
-            )
+            u_action_space = spaces.Dict(
+                    {
+                        "p_thresholds": spaces.Box(
+                            low=0, high=1, shape=(7,), dtype=float
+                        ),
+                        "n_thresholds": spaces.Box(
+                            low=0, high=1, shape=(7,), dtype=float
+                        ),
+                        "matrix": spaces.Box(
+                            low=0, high=1, shape=(7,), dtype=float
+                        ),
+                        "propose": spaces.Discrete(2),
+                    }
+                )
 
             if self.movable:
                 total_action_space.append(u_action_space)
@@ -47,12 +55,13 @@ class ContinuousActionEnv(object):
             # observation space
             share_obs_dim += self.signal_obs_dim
             self.observation_space.append(
-                spaces.Box(
-                    low=-np.inf,
-                    high=+np.inf,
-                    shape=(self.signal_obs_dim,),
-                    dtype=np.float32,
-                )
+                spaces.Dict({
+                    'ranking_difference': spaces.Box(low=-10, high=10, shape=(self.env.n_member, 7, 2), dtype=float),
+                    'thresholds': spaces.Dict({
+                        'p_thresholds': spaces.Box(low=0, high=1, shape=(7,), dtype=float),
+                        'n_thresholds': spaces.Box(low=0, high=1, shape=(7,), dtype=float)
+                    })
+                })
             )  # [-inf,inf]
 
         self.share_observation_space = [

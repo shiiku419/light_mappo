@@ -19,6 +19,19 @@ class ACTLayer(nn.Module):
         if action_space.__class__.__name__ == "Discrete":
             action_dim = action_space.n
             self.action_out = Categorical(inputs_dim, action_dim, use_orthogonal, gain)
+        elif action_space.__class__.__name__ == "Dict":
+            self.dict_action = True
+            self.mixed_action = True
+            self.action_outs = nn.ModuleDict()
+            for action_name, action_space in action_space.spaces.items():
+                if action_space.__class__.__name__ == "Discrete":
+                    action_dim = action_space.n
+                    self.action_outs[action_name] = Categorical(inputs_dim, action_dim, use_orthogonal, gain)
+                elif action_space.__class__.__name__ == "Box":
+                    action_dim = action_space.shape[0]
+                    self.action_outs[action_name] = DiagGaussian(inputs_dim, action_dim, use_orthogonal, gain)
+                else:
+                    raise NotImplementedError(f"Action space {action_space} not supported yet")
         elif action_space.__class__.__name__ == "Box":
             self.continuous_action = True
             action_dim = action_space.shape[0]
@@ -55,7 +68,7 @@ class ACTLayer(nn.Module):
         if self.mixed_action:
             actions = []
             action_log_probs = []
-            for action_out in self.action_outs:
+            for action_out in self.action_outs.values():
                 action_logit = action_out(x)
                 action = action_logit.mode() if deterministic else action_logit.sample()
                 action_log_prob = action_logit.log_probs(action)
@@ -132,12 +145,11 @@ class ACTLayer(nn.Module):
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
         if self.mixed_action:
-            a, b = action.split((2, 1), -1)
-            b = b.long()
-            action = [a, b] 
+            p_thresholds, n_thresholds, matrix, propose = action.split((7, 7, 7, 1), -1)
+            action = [p_thresholds, n_thresholds, matrix, propose.long()] 
             action_log_probs = [] 
             dist_entropy = []
-            for action_out, act in zip(self.action_outs, action):
+            for action_out, act in zip(self.action_outs.values(), action):
                 action_logit = action_out(x)
                 action_log_probs.append(action_logit.log_probs(act))
                 if active_masks is not None:
@@ -147,7 +159,7 @@ class ACTLayer(nn.Module):
                         dist_entropy.append((action_logit.entropy() * active_masks.squeeze(-1)).sum()/active_masks.sum())
                 else:
                     dist_entropy.append(action_logit.entropy().mean())
-                
+                    
             action_log_probs = torch.sum(torch.cat(action_log_probs, -1), -1, keepdim=True)
             dist_entropy = dist_entropy[0] / 2.0 + dist_entropy[1] / 0.98 #! dosen't make sense
 
