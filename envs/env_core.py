@@ -104,13 +104,14 @@ class EnvCore(object):
             subaction = split_actions[1].flatten()
             subsubaction = split_actions[2].flatten()
             propose = default_action[-1]
-            self.ranking = self.change_ranking(
-                action, subaction, agent_id, self.dataset, self.ranking
-            )
-
+            
             if propose == 1:
                 self.generate(subsubaction)
                 self.logger2.writerow([self.step_count, agent_id, subsubaction])
+                
+            self.ranking = self.change_ranking(
+                action, subaction, agent_id, self.dataset, self.ranking
+            )
             
             self.ranking = self.update_ranking(self.F, self.dataset, self.criterion_type)
             _observation, observation = self.get_observation(self.ranking)
@@ -118,7 +119,7 @@ class EnvCore(object):
             self.logger.writerow([self.step_count, agent_id, '+', self.P[agent_id]])
             self.logger.writerow([self.step_count, agent_id, '-', self.Q[agent_id]])
 
-            reward, post_psi, params, penalty = self.get_reward(agent_id)
+            reward, post_psi, params, penalty = self.get_reward(agent_id, propose)
             self.reward_count[agent_id] += reward
             self.penalty[agent_id] += penalty
             
@@ -148,6 +149,7 @@ class EnvCore(object):
                 self.writer.add_scalar('penalty/agent_{}'.format(i), info['penalty'][i], self.step_count)
             self.writer.add_scalar('log/time', info['time'], self.step_count)
             self.writer.add_scalar('log/post_gsi', info['post_gsi'], self.step_count)
+            self.writer.add_scalar('log/dataset', self.dataset.shape[0], self.step_count)
             #self.log_reshaped = self.log.view(-1, self.log.shape[-1])  # reshape into 2D
             self.reward_count = [0 for _ in range(self.n_member)]
             self.penalty = [0 for _ in range(self.n_member)]
@@ -223,20 +225,19 @@ class EnvCore(object):
 
         return params, post_psi
 
-    def get_reward(self, id):
+    def get_reward(self, id, propose):
         params, post_psi = self.get_satisfaction(id)
 
         # Threshold-based reward
-        penalty_coeff = 1/70
+        penalty_coeff = 1/700
         threshold_change_penalty = penalty_coeff * sum([abs(self.P[id][i] - self.pre_threshold[id][i]) / (self.pre_threshold[id][i] + 1e-10) for i in range(len(self.P[id]))])
         threshold_change_penalty += penalty_coeff * sum([abs(self.Q[id][i] - self.pre_threshold[id][i]) / (self.pre_threshold[id][i] + 1e-10) for i in range(len(self.Q[id]))])
 
         # Calculate the final reward
-        main_reward = params["post_psi"] - threshold_change_penalty
-
-        clip = main_reward  # here we don't add threshold_reward to the final reward
-
-        reward = clip
+        reward = params["post_psi"] - threshold_change_penalty
+        
+        if propose == 1:
+            reward -= 0.5 
 
         return reward, post_psi, params, threshold_change_penalty
 
