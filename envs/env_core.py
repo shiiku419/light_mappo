@@ -70,6 +70,10 @@ class EnvCore(object):
         self.F = ['t6' for _ in range(7)]
 
         self.pre_threshold = [[0 for _ in range(7)] for _ in range(self.n_member)]
+        self.pre_index = {
+            'p': [[0 for _ in range(7)] for _ in range(self.n_member)],
+            'q': [[0 for _ in range(7)] for _ in range(self.n_member)]
+        }
         self.first_ranking = self.get_ranking(self.F, self.dataset, self.criterion_type)
 
         self.ranking = self.first_ranking.copy()
@@ -230,8 +234,8 @@ class EnvCore(object):
 
         # Threshold-based reward
         penalty_coeff = 1/700
-        threshold_change_penalty = penalty_coeff * sum([abs(self.P[id][i] - self.pre_threshold[id][i]) / (self.pre_threshold[id][i] + 1e-10) for i in range(len(self.P[id]))])
-        threshold_change_penalty += penalty_coeff * sum([abs(self.Q[id][i] - self.pre_threshold[id][i]) / (self.pre_threshold[id][i] + 1e-10) for i in range(len(self.Q[id]))])
+        threshold_change_penalty = penalty_coeff * sum([abs(self.P[id][i] - self.pre_index['p'][id][i]) / (self.pre_threshold[id][i] + 1e-10) for i in range(len(self.P[id]))])
+        threshold_change_penalty += penalty_coeff * sum([abs(self.Q[id][i] - self.pre_index['p'][id][i]) / (self.pre_threshold[id][i] + 1e-10) for i in range(len(self.Q[id]))])
 
         # Calculate the final reward
         reward = params["post_psi"] - threshold_change_penalty
@@ -300,7 +304,9 @@ class EnvCore(object):
             self.P[i] = [random.random() * 10 for _ in range(7)]
             self.Q[i] = [random.uniform(0, self.P[i][j]) for j in range(7)]
             S = [(self.P[i][j] - self.Q[i][j]) if self.P[i][j] != self.Q[i][j] else 1e-10 for j in range(7)]
-
+            
+            self.pre_index['p'][k] = self.P[i]
+            self.pre_index['q'][k] = self.Q[i]
             self.pre_threshold[k] = S
 
             pref = self.prom(dataset, self.W[i], self.F, p=self.P[i], q=self.Q[i])
