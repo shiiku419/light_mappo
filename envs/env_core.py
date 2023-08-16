@@ -19,9 +19,9 @@ class EnvCore(object):
     
     def __init__(self, n_member=5):
         self.agent_num = 5
-        self.obs_dim = 14 * 5
-        self.action_dim = 21 + 1
-        self.dataset = np.random.rand(7, 7)
+        self.obs_dim = 10 * 5
+        self.action_dim = 15 + 1
+        self.dataset = np.random.rand(5, 5)
         self.writer = SummaryWriter(log_dir='runs/experiment_name')
         self.n_member = n_member
         self.n_action = 4
@@ -30,13 +30,13 @@ class EnvCore(object):
                 i: gym.spaces.Dict(
                     {
                         "p_thresholds": gym.spaces.Box(
-                            low=0, high=1, shape=(7,), dtype=float
+                            low=0, high=1, shape=(5,), dtype=float
                         ),
                         "n_thresholds": gym.spaces.Box(
-                            low=0, high=1, shape=(7,), dtype=float
+                            low=0, high=1, shape=(5,), dtype=float
                         ),
                         "matrix": gym.spaces.Box(
-                            low=0, high=1, shape=(7,), dtype=float
+                            low=0, high=1, shape=(5,), dtype=float
                         ),
                         "propose": gym.spaces.Discrete(2),
                     }
@@ -48,10 +48,10 @@ class EnvCore(object):
 
         self.observation_space = gym.spaces.Dict({
             i: gym.spaces.Dict({
-                'ranking_difference': gym.spaces.Box(low=-10, high=10, shape=(self.n_member, 7, 2), dtype=float),
+                'ranking_difference': gym.spaces.Box(low=-10, high=10, shape=(self.n_member, 5, 2), dtype=float),
                 'thresholds': gym.spaces.Dict({
-                    'p_thresholds': gym.spaces.Box(low=0, high=1, shape=(7,), dtype=float),
-                    'n_thresholds': gym.spaces.Box(low=0, high=1, shape=(7,), dtype=float)
+                    'p_thresholds': gym.spaces.Box(low=0, high=1, shape=(5,), dtype=float),
+                    'n_thresholds': gym.spaces.Box(low=0, high=1, shape=(5,), dtype=float)
                 })
             }) for i in range(self.n_member)
         })
@@ -67,12 +67,12 @@ class EnvCore(object):
         self.W = None
         self.P = {}
         self.Q = {}
-        self.F = ['t6' for _ in range(7)]
+        self.F = ['t6' for _ in range(5)]
 
-        self.pre_threshold = [[0 for _ in range(7)] for _ in range(self.n_member)]
+        self.pre_threshold = [[0 for _ in range(5)] for _ in range(self.n_member)]
         self.pre_index = {
-            'p': [[0 for _ in range(7)] for _ in range(self.n_member)],
-            'q': [[0 for _ in range(7)] for _ in range(self.n_member)]
+            'p': [[0 for _ in range(5)] for _ in range(self.n_member)],
+            'q': [[0 for _ in range(5)] for _ in range(self.n_member)]
         }
         self.first_ranking = self.get_ranking(self.F, self.dataset, self.criterion_type)
 
@@ -191,7 +191,7 @@ class EnvCore(object):
         self.time = 0
         self.criterion_type = self.set_criterion()
         self.agent = random.sample(range(self.n_member), self.n_member)
-        self.dataset = np.random.rand(7, 7)
+        self.dataset = np.random.rand(5, 5)
         writer3.writerow([self.episode, self.dataset])
         self.first_ranking = self.get_ranking(self.F, self.dataset, self.criterion_type)
         _, observation = self.get_observation(self.first_ranking)
@@ -212,13 +212,13 @@ class EnvCore(object):
     def set_criterion(self):
         type = ["max", "min"]
         prob = [0.7, 0.3]
-        self.criterion_type = np.random.choice(a=type, size=7, p=prob)
+        self.criterion_type = np.random.choice(a=type, size=5, p=prob)
         return self.criterion_type
 
     def get_satisfaction(self, id):
-        psi, gsi = self.calc_satisfaction(self.distance, self.first_ranking, 1, 7, id)
+        psi, gsi = self.calc_satisfaction(self.distance, self.first_ranking, 1, 5, id)
 
-        post_psi, post_gsi = self.calc_satisfaction(self.distance, self.ranking, 1, 7, id)
+        post_psi, post_gsi = self.calc_satisfaction(self.distance, self.ranking, 1, 5, id)
 
         params = {
             "pre_psi": psi[id],
@@ -233,7 +233,7 @@ class EnvCore(object):
         params, post_psi = self.get_satisfaction(id)
 
         # Threshold-based reward
-        penalty_coeff = 1/700
+        penalty_coeff = 1/500
         threshold_change_penalty = penalty_coeff * sum([abs(self.P[id][i] - self.pre_index['p'][id][i]) / (self.pre_threshold[id][i] + 1e-10) for i in range(len(self.P[id]))])
         threshold_change_penalty += penalty_coeff * sum([abs(self.Q[id][i] - self.pre_index['p'][id][i]) / (self.pre_threshold[id][i] + 1e-10) for i in range(len(self.Q[id]))])
 
@@ -294,16 +294,16 @@ class EnvCore(object):
         return group_rank
 
     def get_ranking(self, F, dataset, criterion_type):
-        self.W = [np.random.rand(1, 7)[0] for _ in range(self.n_member)]
+        self.W = [np.random.rand(1, 5)[0] for _ in range(self.n_member)]
         rank = {}
 
         for k in range(self.n_member):
             i = self.agent[k]
             p = []
 
-            self.P[i] = [random.random() * 10 for _ in range(7)]
-            self.Q[i] = [random.uniform(0, self.P[i][j]) for j in range(7)]
-            S = [(self.P[i][j] - self.Q[i][j]) if self.P[i][j] != self.Q[i][j] else 1e-10 for j in range(7)]
+            self.P[i] = [random.random() * 10 for _ in range(5)]
+            self.Q[i] = [random.uniform(0, self.P[i][j]) for j in range(5)]
+            S = [(self.P[i][j] - self.Q[i][j]) if self.P[i][j] != self.Q[i][j] else 1e-10 for j in range(5)]
             
             self.pre_index['p'][k] = self.P[i]
             self.pre_index['q'][k] = self.Q[i]

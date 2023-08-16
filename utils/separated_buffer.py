@@ -60,8 +60,8 @@ class SeparatedReplayBuffer(object):
 
     def insert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
                value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None):
-        self.share_obs[self.step + 1] = share_obs.copy().reshape(350)
-        self.obs[self.step + 1] = obs.copy().reshape(70)
+        self.share_obs[self.step + 1] = share_obs.copy().reshape(250)
+        self.obs[self.step + 1] = obs.copy().reshape(50)
         self.rnn_states[self.step + 1] = rnn_states.copy()
         self.rnn_states_critic[self.step + 1] = rnn_states_critic.copy()
         self.actions[self.step] = actions.copy()

@@ -145,7 +145,7 @@ class ACTLayer(nn.Module):
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
         if self.mixed_action:
-            p_thresholds, n_thresholds, matrix, propose = action.split((7, 7, 7, 1), -1)
+            p_thresholds, n_thresholds, matrix, propose = action.split((5, 5, 5, 1), -1)
             action = [p_thresholds, n_thresholds, matrix, propose.long()] 
             action_log_probs = [] 
             dist_entropy = []
