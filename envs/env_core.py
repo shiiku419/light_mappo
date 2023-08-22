@@ -321,13 +321,11 @@ class EnvCore(object):
         return rank
 
     def change_ranking(self, action, subaction, id, dataset, p):
-        p_delta = np.abs(action)  # Ensure p_delta is positive
-        n_delta = np.abs(subaction)  # Ensure n_delta is positive
-        # p_threshold should always be greater than n_threshold
-        p_update = np.maximum(self.P[id] + p_delta, self.Q[id] + n_delta)
-        n_update = np.minimum(self.P[id] + p_delta, self.Q[id] + n_delta)
-        self.P[id] = np.clip(p_update, 0, 10)
-        self.Q[id] = np.clip(n_update, 0, 10)
+        p_delta = self.P[id] + action  # Ensure p_delta is positive
+        n_delta = self.Q[id] - subaction  # Ensure n_delta is positive
+
+        self.P[id] = np.clip(p_delta, 0, 10)
+        self.Q[id] = np.clip(n_delta, 0, 10)
         rank = []
 
         pref = self.prom(dataset, self.W[id], self.F, p=self.P[id], q=self.Q[id])
