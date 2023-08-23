@@ -114,8 +114,16 @@ def main(args):
         / all_args.algorithm_name
         / all_args.experiment_name
     )
+    run_dir2 = (
+        Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[0] + "/logs")
+    )
+    run_dir3 = (
+        Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[0] + "/logs2")
+    )
     if not run_dir.exists():
         os.makedirs(str(run_dir))
+        os.makedirs(str(run_dir2))
+        os.makedirs(str(run_dir3))
 
     if not run_dir.exists():
         curr_run = "run1"

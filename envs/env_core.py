@@ -7,6 +7,9 @@ from pymcdm.methods import PROMETHEE_II
 from pymcdm.helpers import rrankdata
 import torch
 import csv
+import sys
+import os
+from pathlib import Path
 
 f = open('action.csv', 'w')
 f2 = open('generate.csv', 'w')
@@ -14,6 +17,16 @@ f3 = open('dataset.csv', 'w')
 writer = csv.writer(f)
 writer2 = csv.writer(f2)
 writer3 = csv.writer(f3)
+
+run_dir2 = (
+    Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[0] + "/logs")
+)
+run_dir3 = (
+    Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[0] + "/logs2")
+)
+if not run_dir2.exists():
+    os.makedirs(str(run_dir2))
+    os.makedirs(str(run_dir3))
 
 class EnvCore(object):
     
@@ -195,6 +208,9 @@ class EnvCore(object):
         writer3.writerow([self.episode, self.dataset])
         self.first_ranking = self.get_ranking(self.F, self.dataset, self.criterion_type)
         _, observation = self.get_observation(self.first_ranking)
+        for agent_id in range(self.n_member):    
+            self.logger.writerow([self.step_count, agent_id, '+', self.P[agent_id]])
+            self.logger.writerow([self.step_count, agent_id, '-', self.Q[agent_id]])
         #TODO add thresholds
         return observation
 
@@ -233,7 +249,7 @@ class EnvCore(object):
         params, post_psi = self.get_satisfaction(id)
 
         # Threshold-based reward
-        penalty_coeff = 1/500
+        penalty_coeff = 1/50
         threshold_change_penalty = penalty_coeff * sum([abs(self.P[id][i] - self.pre_index['p'][id][i])**2 for i in range(len(self.P[id]))])
         threshold_change_penalty += penalty_coeff * sum([abs(self.Q[id][i] - self.pre_index['q'][id][i])**2 for i in range(len(self.Q[id]))])
 
