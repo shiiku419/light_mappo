@@ -205,6 +205,7 @@ class EnvCore(object):
         self.criterion_type = self.set_criterion()
         self.agent = random.sample(range(self.n_member), self.n_member)
         self.dataset = np.random.rand(5, 5)
+        self.logger2.writerow([self.step_count, self.dataset])
         writer3.writerow([self.episode, self.dataset])
         self.first_ranking = self.get_ranking(self.F, self.dataset, self.criterion_type)
         _, observation = self.get_observation(self.first_ranking)
@@ -249,7 +250,7 @@ class EnvCore(object):
         params, post_psi = self.get_satisfaction(id)
 
         # Threshold-based reward
-        penalty_coeff = 1/50
+        penalty_coeff = 1/500
         threshold_change_penalty = penalty_coeff * sum([abs(self.P[id][i] - self.pre_index['p'][id][i])**2 for i in range(len(self.P[id]))])
         threshold_change_penalty += penalty_coeff * sum([abs(self.Q[id][i] - self.pre_index['q'][id][i])**2 for i in range(len(self.Q[id]))])
 
