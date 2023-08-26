@@ -73,7 +73,7 @@ class EnvCore(object):
         self.episode = 0
         self.max_step = 100
         self.agent = random.sample(range(self.n_member), self.n_member)
-        self.prom = PROMETHEE_II(preference_function='usual')
+        self.prom = PROMETHEE_II(preference_function='vshape')
 
         self.criterion_type = self.set_criterion()
 
