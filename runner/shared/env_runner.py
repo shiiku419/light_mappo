@@ -121,8 +121,12 @@ class EnvRunner(Runner):
         else:
             share_obs = obs
 
+        share_obs = np.expand_dims(share_obs, 1).repeat(self.num_agents, axis=1)
+        share_obs = share_obs.reshape(5, 5, -1)
         self.buffer.share_obs[0] = share_obs.copy()
-        self.buffer.obs[0] = obs.copy()
+        obs_expanded = np.tile(obs, (1, 1, 5))
+        obs_reshaped = obs_expanded.reshape(5, 5, -1)
+        self.buffer.obs[0] = obs_reshaped.copy()
 
     @torch.no_grad()
     def collect(self, step):

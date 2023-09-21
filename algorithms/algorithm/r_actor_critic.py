@@ -67,7 +67,7 @@ class R_Actor(nn.Module):
         if available_actions is not None:
             available_actions = check(available_actions).to(**self.tpdv)
 
-        obs = obs.view(5, -1)  # or obs = obs.reshape(5, -1) in numpy
+        obs = obs.view(-1, 50)  # or obs = obs.reshape(5, -1) in numpy
 
         actor_features = self.base(obs)
 
